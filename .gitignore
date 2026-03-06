@@ -1,0 +1,12 @@
+# Ignore environment files with secrets
+.env
+
+# Build outputs
+bin/
+obj/
+
+# User-specific files
+*.user
+*.swp
+*.suo
+

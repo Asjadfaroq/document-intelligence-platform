@@ -1,0 +1,49 @@
+using DocumentIntelligence.Application;
+using MediatR;
+
+namespace DocumentIntelligence.Api;
+
+public record RegisterTenantRequest(
+    string TenantName,
+    string TenantSlug,
+    string OwnerEmail,
+    string OwnerPassword);
+
+public record LoginRequest(
+    string TenantSlug,
+    string Email,
+    string Password);
+
+public static class AuthEndpoints
+{
+    public static IEndpointRouteBuilder MapAuth(this IEndpointRouteBuilder routes)
+    {
+        var group = routes.MapGroup("/auth");
+
+        group.MapPost("/register-tenant", async (RegisterTenantRequest request, IMediator mediator, CancellationToken ct) =>
+        {
+            var command = new RegisterTenantAndOwnerCommand(
+                request.TenantName,
+                request.TenantSlug,
+                request.OwnerEmail,
+                request.OwnerPassword);
+
+            var result = await mediator.Send(command, ct);
+            return Results.Ok(result);
+        });
+
+        group.MapPost("/login", async (LoginRequest request, IMediator mediator, CancellationToken ct) =>
+        {
+            var command = new LoginCommand(
+                request.Email,
+                request.Password,
+                request.TenantSlug);
+
+            var result = await mediator.Send(command, ct);
+            return Results.Ok(result);
+        });
+
+        return routes;
+    }
+}
+
