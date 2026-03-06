@@ -5,6 +5,8 @@ using System.Threading.Channels;
 using DocumentIntelligence.Application;
 using DocumentIntelligence.Domain;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Pgvector;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -105,6 +107,18 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Content).IsRequired();
             entity.Property(x => x.MetadataJson);
+            var embeddingComparer = new ValueComparer<float[]?>(
+                (l, r) => ReferenceEquals(l, r) || (l != null && r != null && l.SequenceEqual(r)),
+                v => v == null ? 0 : v.Aggregate(0, (acc, item) => HashCode.Combine(acc, item)),
+                v => v == null ? null : v.ToArray());
+            entity.Property(x => x.Embedding)
+                .HasConversion(
+                    f => f == null ? null : new Vector(f),
+                    v => v == null ? null : v.ToArray())
+                .Metadata.SetValueComparer(embeddingComparer);
+
+            entity.Property(x => x.Embedding)
+                .HasColumnType("vector(384)");
 
             entity.HasOne(x => x.Document)
                 .WithMany()
@@ -389,6 +403,43 @@ public class HuggingFaceLLMClient : ILLMClient
     }
 }
 
+public class VectorSearchService : IVectorSearchService
+{
+    private readonly ApplicationDbContext _db;
+
+    public VectorSearchService(ApplicationDbContext db)
+    {
+        _db = db;
+    }
+
+    public async Task<IReadOnlyList<RetrievalChunkDto>> SearchChunksAsync(
+        Guid tenantId,
+        Guid workspaceId,
+        float[] queryEmbedding,
+        int topK,
+        CancellationToken cancellationToken)
+    {
+        var vector = new Vector(queryEmbedding);
+        var results = await _db.Database
+            .SqlQueryRaw<RetrievalChunkDto>(
+                """
+                SELECT c."Id" AS "ChunkId", c."Content", c."DocumentId", d."FileName"
+                FROM "DocumentChunks" c
+                INNER JOIN "Documents" d ON d."Id" = c."DocumentId"
+                WHERE c."TenantId" = {0} AND d."WorkspaceId" = {1} AND c."Embedding" IS NOT NULL
+                ORDER BY c."Embedding" <-> {2}
+                LIMIT {3}
+                """,
+                tenantId,
+                workspaceId,
+                vector,
+                topK)
+            .ToListAsync(cancellationToken);
+
+        return results;
+    }
+}
+
 public class InMemoryIngestionQueue : IIngestionQueue
 {
     private readonly Channel<DocumentIngestionMessage> _channel;
@@ -425,7 +476,7 @@ public class DocumentIngestionWorker : BackgroundService
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
             var httpClientFactory = scope.ServiceProvider.GetRequiredService<IHttpClientFactory>();
-            var httpClient = httpClientFactory.CreateClient(nameof(SupabaseStorageService));
+            var embeddingService = scope.ServiceProvider.GetRequiredService<IEmbeddingService>();
 
             var document = await db.Documents.FirstOrDefaultAsync(d => d.Id == message.DocumentId, stoppingToken);
             if (document is null)
@@ -433,8 +484,12 @@ public class DocumentIngestionWorker : BackgroundService
                 continue;
             }
 
+            document.Status = DocumentStatus.Processing;
+            await db.SaveChangesAsync(stoppingToken);
+
             try
             {
+                var httpClient = httpClientFactory.CreateClient(nameof(SupabaseStorageService));
                 var baseUrl = (configuration["SUPABASE_URL"] ?? throw new InvalidOperationException("SUPABASE_URL is not configured.")).Trim();
                 var serviceKey = (configuration["SUPABASE_SERVICE_ROLE_KEY"] ?? throw new InvalidOperationException("SUPABASE_SERVICE_ROLE_KEY is not configured.")).Trim();
                 var bucket = (configuration["SUPABASE_BUCKET"] ?? "documents").Trim();
@@ -464,6 +519,7 @@ public class DocumentIngestionWorker : BackgroundService
                     }
 
                     var normalized = text.Trim();
+                    var embedding = await embeddingService.GetEmbeddingAsync(normalized, stoppingToken);
 
                     var chunk = new DocumentChunk
                     {
@@ -473,7 +529,7 @@ public class DocumentIngestionWorker : BackgroundService
                         PageNumber = page.Number,
                         ChunkIndex = chunkIndex++,
                         Content = normalized,
-                        Embedding = null,
+                        Embedding = embedding,
                         MetadataJson = null
                     };
 

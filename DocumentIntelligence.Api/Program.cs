@@ -15,9 +15,10 @@ builder.Services.AddAuthorization();
 var connectionString = builder.Configuration.GetConnectionString("Default");
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseNpgsql(connectionString));
+    options.UseNpgsql(connectionString, npgsql => npgsql.UseVector()));
 
 builder.Services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<ApplicationDbContext>());
+builder.Services.AddScoped<IVectorSearchService, VectorSearchService>();
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
 builder.Services.AddHttpClient<IStorageService, SupabaseStorageService>();

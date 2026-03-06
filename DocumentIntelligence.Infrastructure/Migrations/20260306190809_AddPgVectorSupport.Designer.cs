@@ -3,18 +3,20 @@ using System;
 using DocumentIntelligence.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
-using Pgvector;
 
 #nullable disable
 
 namespace DocumentIntelligence.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260306190809_AddPgVectorSupport")]
+    partial class AddPgVectorSupport
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -110,8 +112,8 @@ namespace DocumentIntelligence.Infrastructure.Migrations
                     b.Property<Guid>("DocumentId")
                         .HasColumnType("uuid");
 
-                    b.Property<Vector>("Embedding")
-                        .HasColumnType("vector(384)");
+                    b.PrimitiveCollection<float[]>("Embedding")
+                        .HasColumnType("real[]");
 
                     b.Property<string>("MetadataJson")
                         .HasColumnType("text");

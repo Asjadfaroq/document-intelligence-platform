@@ -126,9 +126,22 @@ public record AskResponse(
 public record AskQuestionCommand(
     Guid TenantId,
     Guid WorkspaceId,
+    Guid UserId,
     string Question,
     int TopK
 ) : IRequest<AskResponse>;
+
+public record RetrievalChunkDto(Guid ChunkId, string Content, Guid DocumentId, string FileName);
+
+public interface IVectorSearchService
+{
+    Task<IReadOnlyList<RetrievalChunkDto>> SearchChunksAsync(
+        Guid tenantId,
+        Guid workspaceId,
+        float[] queryEmbedding,
+        int topK,
+        CancellationToken cancellationToken);
+}
 
 public class RegisterTenantAndOwnerCommandHandler : IRequestHandler<RegisterTenantAndOwnerCommand, AuthResult>
 {
@@ -410,25 +423,43 @@ public class AskQuestionCommandHandler : IRequestHandler<AskQuestionCommand, Ask
     private readonly IApplicationDbContext _db;
     private readonly IEmbeddingService _embeddings;
     private readonly ILLMClient _llm;
+    private readonly IVectorSearchService _vectorSearch;
 
     public AskQuestionCommandHandler(
         IApplicationDbContext db,
         IEmbeddingService embeddings,
-        ILLMClient llm)
+        ILLMClient llm,
+        IVectorSearchService vectorSearch)
     {
         _db = db;
         _embeddings = embeddings;
         _llm = llm;
+        _vectorSearch = vectorSearch;
     }
 
     public async Task<AskResponse> Handle(AskQuestionCommand request, CancellationToken cancellationToken)
     {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         var questionEmbedding = await _embeddings.GetEmbeddingAsync(request.Question, cancellationToken);
 
+        var topK = request.TopK <= 0 ? 5 : Math.Min(request.TopK, 10);
+        var chunks = await _vectorSearch.SearchChunksAsync(
+            request.TenantId,
+            request.WorkspaceId,
+            questionEmbedding,
+            topK,
+            cancellationToken);
+
+        var contextText = chunks.Count > 0
+            ? string.Join("\n\n---\n\n", chunks.Select(c => $"[{c.FileName}]\n{c.Content}"))
+            : "No relevant documents found.";
+
+        var answerText = await _llm.GenerateAnswerAsync(request.Question, contextText, cancellationToken);
+        sw.Stop();
+
+        var documentIds = chunks.Select(c => c.DocumentId).Distinct().ToList();
         var docs = _db.Documents
-            .Where(d => d.TenantId == request.TenantId && d.WorkspaceId == request.WorkspaceId)
-            .OrderByDescending(d => d.CreatedAt)
-            .Take(request.TopK <= 0 ? 5 : Math.Min(request.TopK, 10))
+            .Where(d => documentIds.Contains(d.Id))
             .Select(d => new DocumentDto(
                 d.Id,
                 d.WorkspaceId,
@@ -440,10 +471,30 @@ public class AskQuestionCommandHandler : IRequestHandler<AskQuestionCommand, Ask
             .ToList()
             .AsReadOnly();
 
-        var contextText = string.Join("\n\n", docs.Select(d => d.FileName));
+        var question = new Question
+        {
+            Id = Guid.NewGuid(),
+            TenantId = request.TenantId,
+            WorkspaceId = request.WorkspaceId,
+            UserId = request.UserId,
+            QuestionText = request.Question,
+            CreatedAt = DateTime.UtcNow
+        };
+        await _db.AddAsync(question, cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
 
-        var answer = await _llm.GenerateAnswerAsync(request.Question, contextText, cancellationToken);
+        var answer = new Answer
+        {
+            Id = Guid.NewGuid(),
+            QuestionId = question.Id,
+            AnswerText = answerText,
+            SourcesJson = System.Text.Json.JsonSerializer.Serialize(chunks.Select(c => new { c.ChunkId, c.DocumentId, c.FileName }).ToList()),
+            LatencyMs = (int)sw.ElapsedMilliseconds,
+            ModelName = null
+        };
+        await _db.AddAsync(answer, cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
 
-        return new AskResponse(answer, docs);
+        return new AskResponse(answerText, docs);
     }
 }

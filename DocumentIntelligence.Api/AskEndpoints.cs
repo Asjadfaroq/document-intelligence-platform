@@ -21,7 +21,8 @@ public static class AskEndpoints
             CancellationToken ct) =>
         {
             var tenantIdClaim = user.FindFirst("tenantId")?.Value;
-            if (!Guid.TryParse(tenantIdClaim, out var tenantId))
+            var subClaim = user.FindFirst("sub")?.Value;
+            if (!Guid.TryParse(tenantIdClaim, out var tenantId) || !Guid.TryParse(subClaim, out var userId))
             {
                 return Results.Unauthorized();
             }
@@ -31,6 +32,7 @@ public static class AskEndpoints
             var command = new AskQuestionCommand(
                 tenantId,
                 workspaceId,
+                userId,
                 request.Question,
                 topK);
 
