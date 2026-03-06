@@ -21,6 +21,8 @@ builder.Services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<Ap
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
 builder.Services.AddHttpClient<IStorageService, SupabaseStorageService>();
+builder.Services.AddHttpClient<IEmbeddingService, HuggingFaceEmbeddingService>();
+builder.Services.AddHttpClient<ILLMClient, HuggingFaceLLMClient>();
 builder.Services.AddSingleton<IIngestionQueue, InMemoryIngestionQueue>();
 builder.Services.AddHostedService<DocumentIngestionWorker>();
 
@@ -69,5 +71,6 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapAuth();
 app.MapWorkspaces();
 app.MapDocuments();
+app.MapAsk();
 
 app.Run();

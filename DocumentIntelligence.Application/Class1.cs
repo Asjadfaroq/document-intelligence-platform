@@ -61,6 +61,16 @@ public interface IStorageService
         CancellationToken cancellationToken);
 }
 
+public interface IEmbeddingService
+{
+    Task<float[]> GetEmbeddingAsync(string text, CancellationToken cancellationToken);
+}
+
+public interface ILLMClient
+{
+    Task<string> GenerateAnswerAsync(string question, string context, CancellationToken cancellationToken);
+}
+
 public record DocumentIngestionMessage(Guid DocumentId, Guid TenantId);
 
 public interface IIngestionQueue
@@ -101,6 +111,24 @@ public record UploadDocumentCommand(
     Stream Content,
     string? Language
 ) : IRequest<DocumentDto>;
+
+public record AskRequest(
+    Guid WorkspaceId,
+    string Question,
+    int TopK
+);
+
+public record AskResponse(
+    string Answer,
+    IReadOnlyList<DocumentDto> Sources
+);
+
+public record AskQuestionCommand(
+    Guid TenantId,
+    Guid WorkspaceId,
+    string Question,
+    int TopK
+) : IRequest<AskResponse>;
 
 public class RegisterTenantAndOwnerCommandHandler : IRequestHandler<RegisterTenantAndOwnerCommand, AuthResult>
 {
@@ -374,5 +402,48 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
             document.Language,
             document.Status,
             document.CreatedAt);
+    }
+}
+
+public class AskQuestionCommandHandler : IRequestHandler<AskQuestionCommand, AskResponse>
+{
+    private readonly IApplicationDbContext _db;
+    private readonly IEmbeddingService _embeddings;
+    private readonly ILLMClient _llm;
+
+    public AskQuestionCommandHandler(
+        IApplicationDbContext db,
+        IEmbeddingService embeddings,
+        ILLMClient llm)
+    {
+        _db = db;
+        _embeddings = embeddings;
+        _llm = llm;
+    }
+
+    public async Task<AskResponse> Handle(AskQuestionCommand request, CancellationToken cancellationToken)
+    {
+        var questionEmbedding = await _embeddings.GetEmbeddingAsync(request.Question, cancellationToken);
+
+        var docs = _db.Documents
+            .Where(d => d.TenantId == request.TenantId && d.WorkspaceId == request.WorkspaceId)
+            .OrderByDescending(d => d.CreatedAt)
+            .Take(request.TopK <= 0 ? 5 : Math.Min(request.TopK, 10))
+            .Select(d => new DocumentDto(
+                d.Id,
+                d.WorkspaceId,
+                d.FileName,
+                d.StoragePath,
+                d.Language,
+                d.Status,
+                d.CreatedAt))
+            .ToList()
+            .AsReadOnly();
+
+        var contextText = string.Join("\n\n", docs.Select(d => d.FileName));
+
+        var answer = await _llm.GenerateAnswerAsync(request.Question, contextText, cancellationToken);
+
+        return new AskResponse(answer, docs);
     }
 }

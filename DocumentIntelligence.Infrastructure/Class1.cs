@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Channels;
@@ -255,6 +256,136 @@ public class SupabaseStorageService : IStorageService
         }
 
         return $"{bucket}/{objectPath}";
+    }
+}
+
+public class HuggingFaceEmbeddingService : IEmbeddingService
+{
+    private readonly HttpClient _httpClient;
+    private readonly IConfiguration _configuration;
+
+    public HuggingFaceEmbeddingService(HttpClient httpClient, IConfiguration configuration)
+    {
+        _httpClient = httpClient;
+        _configuration = configuration;
+    }
+
+    /// <summary>Strips control characters (e.g. \r from Windows .env) so values are safe for headers/URLs.</summary>
+    private static string SanitizeHfConfig(string value) =>
+        string.IsNullOrEmpty(value) ? value : string.Concat(value.Trim().Where(c => !char.IsControl(c)));
+
+    public async Task<float[]> GetEmbeddingAsync(string text, CancellationToken cancellationToken)
+    {
+        var apiKey = SanitizeHfConfig(_configuration["HUGGINGFACE_API_KEY"] ?? throw new InvalidOperationException("HUGGINGFACE_API_KEY not configured."));
+        var model = SanitizeHfConfig(_configuration["HUGGINGFACE_EMBEDDING_MODEL"]
+                    ?? throw new InvalidOperationException("HUGGINGFACE_EMBEDDING_MODEL not set."));
+        var dim = int.Parse(_configuration["EMBEDDING_DIMENSION"] ?? "384", CultureInfo.InvariantCulture);
+
+        var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"https://router.huggingface.co/hf-inference/models/{model}/pipeline/feature-extraction");
+
+        request.Headers.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+
+        request.Content = new StringContent(
+            System.Text.Json.JsonSerializer.Serialize(new { inputs = new[] { text } }),
+            Encoding.UTF8,
+            "application/json");
+
+        var response = await _httpClient.SendAsync(request, cancellationToken);
+        var json = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"HuggingFace embedding error ({response.StatusCode}): {json}");
+        }
+
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var vector = doc.RootElement[0]
+            .EnumerateArray()
+            .Select(e => e.GetSingle())
+            .ToArray();
+
+        if (vector.Length != dim)
+        {
+            throw new InvalidOperationException($"Embedding dimension mismatch. Expected {dim}, got {vector.Length}.");
+        }
+
+        return vector;
+    }
+}
+
+public class HuggingFaceLLMClient : ILLMClient
+{
+    private readonly HttpClient _httpClient;
+    private readonly IConfiguration _configuration;
+
+    public HuggingFaceLLMClient(HttpClient httpClient, IConfiguration configuration)
+    {
+        _httpClient = httpClient;
+        _configuration = configuration;
+    }
+
+    /// <summary>Strips control characters (e.g. \r from Windows .env) so values are safe for headers/URLs.</summary>
+    private static string SanitizeHfConfig(string value) =>
+        string.IsNullOrEmpty(value) ? value : string.Concat(value.Trim().Where(c => !char.IsControl(c)));
+
+    public async Task<string> GenerateAnswerAsync(string question, string context, CancellationToken cancellationToken)
+    {
+        var apiKey = SanitizeHfConfig(_configuration["HUGGINGFACE_API_KEY"]
+            ?? throw new InvalidOperationException("HUGGINGFACE_API_KEY not set."));
+        var model = SanitizeHfConfig(_configuration["HUGGINGFACE_LLM_MODEL"]
+            ?? throw new InvalidOperationException("HUGGINGFACE_LLM_MODEL not set."));
+
+        var prompt = $"Context:\n{context}\n\nQuestion:\n{question}\n\nAnswer:";
+
+        var payload = new
+        {
+            model = model,
+            messages = new[]
+            {
+                new { role = "user", content = prompt }
+            },
+            max_tokens = 256,
+            temperature = 0.2
+        };
+
+        // Use Responses API: https://router.huggingface.co/v1 (model in body, not URL)
+        var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "https://router.huggingface.co/v1/chat/completions");
+
+        request.Headers.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+
+        request.Content = new StringContent(
+            System.Text.Json.JsonSerializer.Serialize(payload),
+            Encoding.UTF8,
+            "application/json");
+
+        var response = await _httpClient.SendAsync(request, cancellationToken);
+        var json = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            // Give a clear fix when no Inference Provider is enabled
+            if (response.StatusCode == System.Net.HttpStatusCode.BadRequest && json.Contains("model_not_supported", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "Hugging Face model is not available: enable at least one Inference Provider in your account at https://hf.co/settings/inference-providers (e.g. HF Inference or Groq), then retry.");
+            }
+            throw new InvalidOperationException(
+                $"HuggingFace LLM error ({response.StatusCode}): {json}");
+        }
+
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        return doc.RootElement
+            .GetProperty("choices")[0]
+            .GetProperty("message")
+            .GetProperty("content")
+            .GetString()?.Trim() ?? string.Empty;
     }
 }
 
