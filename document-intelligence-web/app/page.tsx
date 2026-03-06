@@ -2,6 +2,20 @@
 
 import { FormEvent, useMemo, useState } from "react";
 
+type LoginResponse = {
+  accessToken: string;
+  tenantId: string;
+  email: string;
+  role: string;
+};
+
+type Workspace = {
+  id: string;
+  name: string;
+  description: string | null;
+  createdAt: string;
+};
+
 type SourceDocument = {
   id: string;
   workspaceId: string;
@@ -31,11 +45,40 @@ const quickQuestions = [
   "Summarize experience in 5 bullet points.",
 ];
 
+async function readResponseBody(res: Response): Promise<unknown | null> {
+  const raw = await res.text();
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return raw;
+  }
+}
+
+function normalizeToken(raw: string): string {
+  return raw.replace(/^Bearer\s+/i, "").replace(/\r/g, "").replace(/\n/g, "").trim();
+}
+
+function formatError(status: number, body: unknown): string {
+  if (typeof body === "string" && body.trim().length > 0) {
+    return body;
+  }
+  if (body && typeof body === "object") {
+    return JSON.stringify(body);
+  }
+  return `Request failed with status ${status}.`;
+}
+
 export default function Home() {
   const [apiBase, setApiBase] = useState(
     process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5224",
   );
+  const [tenantSlug, setTenantSlug] = useState("acme");
+  const [email, setEmail] = useState("owner@acme.com");
+  const [password, setPassword] = useState("Password123!");
   const [token, setToken] = useState("");
+  const [role, setRole] = useState("");
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspaceId, setWorkspaceId] = useState("");
   const [language, setLanguage] = useState<string>("");
   const [topK, setTopK] = useState(5);
@@ -44,18 +87,87 @@ export default function Home() {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [chat, setChat] = useState<ChatItem[]>([]);
   const [status, setStatus] = useState<string>("");
+  const [busyLogin, setBusyLogin] = useState(false);
   const [busyUpload, setBusyUpload] = useState(false);
   const [busyAsk, setBusyAsk] = useState(false);
+  const normalizedToken = useMemo(() => normalizeToken(token), [token]);
+  const isLoggedIn = Boolean(normalizedToken);
 
   const canCallApi = useMemo(
-    () => Boolean(apiBase.trim() && token.trim() && workspaceId.trim()),
-    [apiBase, token, workspaceId],
+    () => Boolean(apiBase.trim() && normalizedToken && workspaceId.trim()),
+    [apiBase, normalizedToken, workspaceId],
   );
+
+  async function loadWorkspaces(jwt: string) {
+    const res = await fetch(`${apiBase}/workspaces`, {
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+      },
+    });
+    const body = await readResponseBody(res);
+    if (!res.ok) {
+      throw new Error(formatError(res.status, body));
+    }
+    const data = Array.isArray(body) ? (body as Workspace[]) : [];
+    setWorkspaces(data);
+    if (data.length > 0) {
+      setWorkspaceId(data[0].id);
+    }
+  }
+
+  async function handleLogin(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setBusyLogin(true);
+    setStatus("Logging in...");
+    try {
+      const res = await fetch(`${apiBase}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tenantSlug: tenantSlug.trim(),
+          email: email.trim(),
+          password,
+        }),
+      });
+      const body = await readResponseBody(res);
+      if (!res.ok) {
+        throw new Error(formatError(res.status, body));
+      }
+
+      if (!body || typeof body !== "object" || !("accessToken" in body)) {
+        throw new Error("Unexpected login response format.");
+      }
+      const login = body as LoginResponse;
+      const jwt = normalizeToken(login.accessToken);
+      setToken(jwt);
+      setRole(login.role);
+      await loadWorkspaces(jwt);
+      setStatus("Login successful. Workspace loaded.");
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Login failed.");
+    } finally {
+      setBusyLogin(false);
+    }
+  }
+
+  async function handleRefreshWorkspaces() {
+    if (!isLoggedIn) {
+      setStatus("Login first.");
+      return;
+    }
+    setStatus("Refreshing workspaces...");
+    try {
+      await loadWorkspaces(normalizedToken);
+      setStatus("Workspaces refreshed.");
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Failed to refresh workspaces.");
+    }
+  }
 
   async function handleUpload(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!canCallApi || !uploadFile) {
-      setStatus("Set API URL/token/workspace and choose a PDF first.");
+      setStatus("Login, select workspace, and choose a PDF first.");
       return;
     }
 
@@ -70,14 +182,17 @@ export default function Home() {
       const res = await fetch(`${apiBase}/documents/upload?${query.toString()}`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${normalizedToken}`,
         },
         body: form,
       });
 
-      const body = await res.text();
+      const body = await readResponseBody(res);
       if (!res.ok) {
-        throw new Error(body || `Upload failed with status ${res.status}`);
+        if (res.status === 401) {
+          throw new Error("Unauthorized. Please login again.");
+        }
+        throw new Error(formatError(res.status, body));
       }
 
       setStatus("Upload complete. Ingestion started. Wait until document status is Ready.");
@@ -90,7 +205,7 @@ export default function Home() {
 
   async function ask(q: string) {
     if (!canCallApi || !q.trim()) {
-      setStatus("Set API URL/token/workspace and enter a question.");
+      setStatus("Login, select workspace, and enter a question.");
       return;
     }
 
@@ -100,7 +215,7 @@ export default function Home() {
       const res = await fetch(`${apiBase}/workspaces/${workspaceId}/ask`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${normalizedToken}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -110,10 +225,19 @@ export default function Home() {
         }),
       });
 
-      const json = (await res.json()) as AskResponse;
+      const body = await readResponseBody(res);
       if (!res.ok) {
-        throw new Error(JSON.stringify(json));
+        if (res.status === 401) {
+          throw new Error("Unauthorized. Please login again.");
+        }
+        throw new Error(formatError(res.status, body));
       }
+
+      if (!body || typeof body !== "object" || !("answer" in body) || !("sources" in body)) {
+        throw new Error("Unexpected response format from /ask endpoint.");
+      }
+
+      const json = body as AskResponse;
 
       setChat((prev) => [
         {
@@ -138,7 +262,7 @@ export default function Home() {
     <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-4 p-6">
       <h1 className="text-2xl font-semibold">Document Intelligence Q&A</h1>
 
-      <section className="grid gap-3 rounded border border-zinc-700 p-4 md:grid-cols-2">
+      <section className="grid gap-3 rounded border border-zinc-700 p-4 md:grid-cols-3">
         <input
           className="rounded border border-zinc-600 bg-transparent p-2"
           placeholder="API base (http://localhost:5224)"
@@ -147,17 +271,64 @@ export default function Home() {
         />
         <input
           className="rounded border border-zinc-600 bg-transparent p-2"
-          placeholder="Workspace ID"
-          value={workspaceId}
-          onChange={(e) => setWorkspaceId(e.target.value)}
+          placeholder="Tenant slug"
+          value={tenantSlug}
+          onChange={(e) => setTenantSlug(e.target.value)}
         />
-        <textarea
-          className="rounded border border-zinc-600 bg-transparent p-2 md:col-span-2"
-          placeholder="JWT token"
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-          rows={3}
-        />
+        <button
+          type="button"
+          className="rounded border border-zinc-600 p-2 text-sm hover:bg-zinc-800"
+          onClick={handleRefreshWorkspaces}
+          disabled={!isLoggedIn}
+        >
+          Refresh Workspaces
+        </button>
+      </section>
+
+      <section className="rounded border border-zinc-700 p-4">
+        <h2 className="mb-2 text-lg font-medium">Login</h2>
+        <form className="grid gap-3 md:grid-cols-4" onSubmit={handleLogin}>
+          <input
+            className="rounded border border-zinc-600 bg-transparent p-2"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <input
+            className="rounded border border-zinc-600 bg-transparent p-2"
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <select
+            className="rounded border border-zinc-600 bg-transparent p-2"
+            value={workspaceId}
+            onChange={(e) => setWorkspaceId(e.target.value)}
+            disabled={!isLoggedIn || workspaces.length === 0}
+          >
+            <option value="">
+              {isLoggedIn ? "Select workspace" : "Login to load workspaces"}
+            </option>
+            {workspaces.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name} ({w.id.slice(0, 8)}...)
+              </option>
+            ))}
+          </select>
+          <button
+            className="rounded bg-blue-600 p-2 font-medium text-white disabled:opacity-60"
+            type="submit"
+            disabled={busyLogin}
+          >
+            {busyLogin ? "Logging in..." : "Login"}
+          </button>
+        </form>
+        {isLoggedIn && (
+          <p className="mt-2 text-xs text-zinc-400">
+            Logged in as {email} ({role}). Token managed internally.
+          </p>
+        )}
       </section>
 
       <section className="rounded border border-zinc-700 p-4">
@@ -177,7 +348,7 @@ export default function Home() {
           />
           <button
             className="rounded bg-blue-600 p-2 font-medium text-white disabled:opacity-60"
-            disabled={busyUpload || !canCallApi || !uploadFile}
+            disabled={busyUpload || !isLoggedIn || !workspaceId || !uploadFile}
             type="submit"
           >
             {busyUpload ? "Uploading..." : "Upload"}
@@ -236,7 +407,7 @@ export default function Home() {
           />
           <button
             className="rounded bg-emerald-600 px-4 py-2 font-medium text-white disabled:opacity-60"
-            disabled={busyAsk || !canCallApi || !question.trim()}
+            disabled={busyAsk || !isLoggedIn || !workspaceId || !question.trim()}
             type="submit"
           >
             {busyAsk ? "Asking..." : "Ask"}

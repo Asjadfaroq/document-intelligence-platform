@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.IdentityModel.Tokens.Jwt;
 using DocumentIntelligence.Application;
 using MediatR;
 
@@ -21,7 +22,10 @@ public static class AskEndpoints
             CancellationToken ct) =>
         {
             var tenantIdClaim = user.FindFirst("tenantId")?.Value;
-            var subClaim = user.FindFirst("sub")?.Value;
+            var subClaim =
+                user.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+                ?? user.FindFirst("sub")?.Value
+                ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (!Guid.TryParse(tenantIdClaim, out var tenantId) || !Guid.TryParse(subClaim, out var userId))
             {
                 return Results.Unauthorized();

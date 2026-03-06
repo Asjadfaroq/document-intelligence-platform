@@ -51,12 +51,17 @@ public static class DocumentEndpoints
         })
         .RequireAuthorization(policy => policy.RequireRole("Owner", "Admin", "Member"));
 
-        group.MapPost("/upload", async (Guid workspaceId, IFormFile file, string? language, ClaimsPrincipal user, IMediator mediator, CancellationToken ct) =>
+        group.MapPost("/upload", async (string workspaceId, IFormFile file, string? language, ClaimsPrincipal user, IMediator mediator, CancellationToken ct) =>
         {
             var tenantIdClaim = user.FindFirst("tenantId")?.Value;
             if (!Guid.TryParse(tenantIdClaim, out var tenantId))
             {
                 return Results.Unauthorized();
+            }
+
+            if (!Guid.TryParse(workspaceId, out var workspaceGuid))
+            {
+                return Results.BadRequest("workspaceId must be a valid GUID.");
             }
 
             if (file == null || file.Length == 0)
@@ -68,7 +73,7 @@ public static class DocumentEndpoints
 
             var command = new UploadDocumentCommand(
                 tenantId,
-                workspaceId,
+                workspaceGuid,
                 file.FileName,
                 stream,
                 language);
