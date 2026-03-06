@@ -40,3 +40,59 @@ public class Workspace
 
     public Tenant Tenant { get; set; } = default!;
 }
+
+public enum DocumentStatus
+{
+    Uploaded = 1,
+    Processing = 2,
+    Ready = 3,
+    Failed = 4
+}
+
+public class Document
+{
+    public Guid Id { get; set; }
+    public Guid TenantId { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public string FileName { get; set; } = default!;
+    public string StoragePath { get; set; } = default!;
+    public string? Language { get; set; }
+    public DocumentStatus Status { get; set; }
+    public DateTime CreatedAt { get; set; }
+
+    public Workspace Workspace { get; set; } = default!;
+}
+
+public class DocumentChunk
+{
+    public Guid Id { get; set; }
+    public Guid DocumentId { get; set; }
+    public Guid TenantId { get; set; }
+    public int PageNumber { get; set; }
+    public int ChunkIndex { get; set; }
+    public string Content { get; set; } = default!;
+    public float[]? Embedding { get; set; }
+    public string? MetadataJson { get; set; }
+
+    public Document Document { get; set; } = default!;
+}
+
+public class Question
+{
+    public Guid Id { get; set; }
+    public Guid TenantId { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid UserId { get; set; }
+    public string QuestionText { get; set; } = default!;
+    public DateTime CreatedAt { get; set; }
+}
+
+public class Answer
+{
+    public Guid Id { get; set; }
+    public Guid QuestionId { get; set; }
+    public string AnswerText { get; set; } = default!;
+    public string? SourcesJson { get; set; }
+    public int LatencyMs { get; set; }
+    public string? ModelName { get; set; }
+}

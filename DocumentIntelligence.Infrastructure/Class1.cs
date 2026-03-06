@@ -19,10 +19,15 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<User> Users => Set<User>();
     public DbSet<Workspace> Workspaces => Set<Workspace>();
+    public DbSet<Document> Documents => Set<Document>();
+    public DbSet<DocumentChunk> DocumentChunks => Set<DocumentChunk>();
+    public DbSet<Question> Questions => Set<Question>();
+    public DbSet<Answer> Answers => Set<Answer>();
 
     IQueryable<Tenant> IApplicationDbContext.Tenants => Tenants.AsQueryable();
     IQueryable<User> IApplicationDbContext.Users => Users.AsQueryable();
     IQueryable<Workspace> IApplicationDbContext.Workspaces => Workspaces.AsQueryable();
+    IQueryable<Document> IApplicationDbContext.Documents => Documents.AsQueryable();
 
     public async Task AddAsync<TEntity>(TEntity entity, CancellationToken cancellationToken) where TEntity : class
     {
@@ -71,6 +76,53 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             entity.HasOne(x => x.Tenant)
                 .WithMany(t => t.Workspaces)
                 .HasForeignKey(x => x.TenantId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Document>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.FileName).IsRequired().HasMaxLength(500);
+            entity.Property(x => x.StoragePath).IsRequired().HasMaxLength(1000);
+            entity.Property(x => x.Language).HasMaxLength(10);
+            entity.Property(x => x.Status).IsRequired();
+            entity.Property(x => x.CreatedAt).HasDefaultValueSql("timezone('utc', now())");
+
+            entity.HasOne(x => x.Workspace)
+                .WithMany()
+                .HasForeignKey(x => x.WorkspaceId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<DocumentChunk>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Content).IsRequired();
+            entity.Property(x => x.MetadataJson);
+
+            entity.HasOne(x => x.Document)
+                .WithMany()
+                .HasForeignKey(x => x.DocumentId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Question>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.QuestionText).IsRequired();
+            entity.Property(x => x.CreatedAt).HasDefaultValueSql("timezone('utc', now())");
+        });
+
+        modelBuilder.Entity<Answer>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.AnswerText).IsRequired();
+            entity.Property(x => x.SourcesJson);
+            entity.Property(x => x.ModelName).HasMaxLength(200);
+
+            entity.HasOne<Question>()
+                .WithMany()
+                .HasForeignKey(x => x.QuestionId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }

@@ -23,6 +23,23 @@ public record AuthResult(
     string Role
 );
 
+public record WorkspaceDto(
+    Guid Id,
+    string Name,
+    string? Description,
+    DateTime CreatedAt
+);
+
+public record DocumentDto(
+    Guid Id,
+    Guid WorkspaceId,
+    string FileName,
+    string StoragePath,
+    string? Language,
+    DocumentStatus Status,
+    DateTime CreatedAt
+);
+
 public interface IPasswordHasher
 {
     string Hash(string password);
@@ -39,12 +56,27 @@ public interface IApplicationDbContext
     IQueryable<Tenant> Tenants { get; }
     IQueryable<User> Users { get; }
     IQueryable<Workspace> Workspaces { get; }
+    IQueryable<Document> Documents { get; }
 
     Task AddAsync<TEntity>(TEntity entity, CancellationToken cancellationToken)
         where TEntity : class;
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }
+
+public record GetWorkspacesQuery(Guid TenantId) : IRequest<IReadOnlyList<WorkspaceDto>>;
+
+public record CreateWorkspaceCommand(Guid TenantId, string Name, string? Description) : IRequest<WorkspaceDto>;
+
+public record GetDocumentsQuery(Guid TenantId, Guid WorkspaceId) : IRequest<IReadOnlyList<DocumentDto>>;
+
+public record CreateDocumentCommand(
+    Guid TenantId,
+    Guid WorkspaceId,
+    string FileName,
+    string StoragePath,
+    string? Language
+) : IRequest<DocumentDto>;
 
 public class RegisterTenantAndOwnerCommandHandler : IRequestHandler<RegisterTenantAndOwnerCommand, AuthResult>
 {
@@ -150,5 +182,120 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, AuthResult>
             tenant.Id.ToString(),
             user.Email,
             user.Role.ToString());
+    }
+}
+
+public class GetWorkspacesQueryHandler : IRequestHandler<GetWorkspacesQuery, IReadOnlyList<WorkspaceDto>>
+{
+    private readonly IApplicationDbContext _db;
+
+    public GetWorkspacesQueryHandler(IApplicationDbContext db)
+    {
+        _db = db;
+    }
+
+    public Task<IReadOnlyList<WorkspaceDto>> Handle(GetWorkspacesQuery request, CancellationToken cancellationToken)
+    {
+        var workspaces = _db.Workspaces
+            .Where(w => w.TenantId == request.TenantId)
+            .OrderBy(w => w.CreatedAt)
+            .Select(w => new WorkspaceDto(w.Id, w.Name, w.Description, w.CreatedAt))
+            .ToList()
+            .AsReadOnly();
+
+        return Task.FromResult<IReadOnlyList<WorkspaceDto>>(workspaces);
+    }
+}
+
+public class CreateWorkspaceCommandHandler : IRequestHandler<CreateWorkspaceCommand, WorkspaceDto>
+{
+    private readonly IApplicationDbContext _db;
+
+    public CreateWorkspaceCommandHandler(IApplicationDbContext db)
+    {
+        _db = db;
+    }
+
+    public async Task<WorkspaceDto> Handle(CreateWorkspaceCommand request, CancellationToken cancellationToken)
+    {
+        var workspace = new Workspace
+        {
+            Id = Guid.NewGuid(),
+            TenantId = request.TenantId,
+            Name = request.Name,
+            Description = request.Description,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await _db.AddAsync(workspace, cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
+
+        return new WorkspaceDto(workspace.Id, workspace.Name, workspace.Description, workspace.CreatedAt);
+    }
+}
+
+public class GetDocumentsQueryHandler : IRequestHandler<GetDocumentsQuery, IReadOnlyList<DocumentDto>>
+{
+    private readonly IApplicationDbContext _db;
+
+    public GetDocumentsQueryHandler(IApplicationDbContext db)
+    {
+        _db = db;
+    }
+
+    public Task<IReadOnlyList<DocumentDto>> Handle(GetDocumentsQuery request, CancellationToken cancellationToken)
+    {
+        var docs = _db.Documents
+            .Where(d => d.TenantId == request.TenantId && d.WorkspaceId == request.WorkspaceId)
+            .OrderByDescending(d => d.CreatedAt)
+            .Select(d => new DocumentDto(
+                d.Id,
+                d.WorkspaceId,
+                d.FileName,
+                d.StoragePath,
+                d.Language,
+                d.Status,
+                d.CreatedAt))
+            .ToList()
+            .AsReadOnly();
+
+        return Task.FromResult<IReadOnlyList<DocumentDto>>(docs);
+    }
+}
+
+public class CreateDocumentCommandHandler : IRequestHandler<CreateDocumentCommand, DocumentDto>
+{
+    private readonly IApplicationDbContext _db;
+
+    public CreateDocumentCommandHandler(IApplicationDbContext db)
+    {
+        _db = db;
+    }
+
+    public async Task<DocumentDto> Handle(CreateDocumentCommand request, CancellationToken cancellationToken)
+    {
+        var document = new Document
+        {
+            Id = Guid.NewGuid(),
+            TenantId = request.TenantId,
+            WorkspaceId = request.WorkspaceId,
+            FileName = request.FileName,
+            StoragePath = request.StoragePath,
+            Language = request.Language,
+            Status = DocumentStatus.Uploaded,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await _db.AddAsync(document, cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
+
+        return new DocumentDto(
+            document.Id,
+            document.WorkspaceId,
+            document.FileName,
+            document.StoragePath,
+            document.Language,
+            document.Status,
+            document.CreatedAt);
     }
 }
