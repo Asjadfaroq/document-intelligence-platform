@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text;
 using DocumentIntelligence.Application;
 using DocumentIntelligence.Infrastructure;
@@ -27,6 +28,8 @@ builder.Host.UseSerilog((ctx, cfg) =>
 builder.Services.AddSerilog();
 
 builder.Services.AddOpenApi();
+
+// CORS: allow only explicitly configured origins (no wildcards). Production sets CORS__AllowedOrigins__0, etc. via env.
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("WebClient", policy =>
@@ -34,21 +37,34 @@ builder.Services.AddCors(options =>
         policy
             .SetIsOriginAllowed(origin =>
             {
-                if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+                if (string.IsNullOrWhiteSpace(origin) || !Uri.TryCreate(origin, UriKind.Absolute, out var uri) || !uri.IsAbsoluteUri)
+                    return false;
+
+                // Require HTTPS in production for non-localhost origins (security)
+                var env = builder.Environment;
+                if (!uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) &&
+                    !uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase))
                 {
                     return false;
                 }
 
-                if (uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
-                    || uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase))
+                var allowedHosts = builder.Configuration
+                    .GetSection("CORS:AllowedOrigins")
+                    .Get<string[]>()
+                    ?? Array.Empty<string>();
+
+                if (allowedHosts.Length > 0)
                 {
-                    return true;
+                    // Strict: only origins whose host is in the whitelist (case-insensitive)
+                    return allowedHosts.Any(h => string.Equals(h?.Trim(), uri.Host, StringComparison.OrdinalIgnoreCase));
                 }
 
-                // Production: allow Vercel app (replace with your actual Vercel URL if different)
-                if (uri.Host.Equals("document-intelligence-platform.vercel.app", StringComparison.OrdinalIgnoreCase))
+                // No origins configured: in Development allow localhost only; in Production allow none (must set env)
+                if (env.IsDevelopment())
                 {
-                    return true;
+                    return uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                        || uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase);
                 }
 
                 return false;
