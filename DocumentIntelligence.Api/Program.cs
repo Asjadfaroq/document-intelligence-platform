@@ -39,8 +39,19 @@ builder.Services.AddCors(options =>
                     return false;
                 }
 
-                return uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
-                    || uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase);
+                if (uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                    || uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                // Production: allow Vercel app (replace with your actual Vercel URL if different)
+                if (uri.Host.Equals("document-intelligence-platform.vercel.app", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                return false;
             })
             .AllowAnyHeader()
             .AllowAnyMethod();
