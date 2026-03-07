@@ -635,6 +635,21 @@ public sealed class InMemoryCacheService : ICacheService
     }
 }
 
+public sealed class WorkspaceAccessService : IWorkspaceAccessService
+{
+    private readonly IApplicationDbContext _db;
+
+    public WorkspaceAccessService(IApplicationDbContext db)
+    {
+        _db = db;
+    }
+
+    public async Task<bool> WorkspaceBelongsToTenantAsync(Guid workspaceId, Guid tenantId, CancellationToken cancellationToken = default)
+    {
+        return await _db.Workspaces.AnyAsync(w => w.Id == workspaceId && w.TenantId == tenantId, cancellationToken);
+    }
+}
+
 public class DocumentIngestionWorker : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;

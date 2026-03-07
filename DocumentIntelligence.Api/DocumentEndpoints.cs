@@ -19,7 +19,12 @@ public static class DocumentEndpoints
         var group = routes.MapGroup("/documents")
             .RequireAuthorization();
 
-        group.MapGet("/workspaces/{workspaceId:guid}", async (Guid workspaceId, ClaimsPrincipal user, IMediator mediator, CancellationToken ct) =>
+        group.MapGet("/workspaces/{workspaceId:guid}", async (
+            Guid workspaceId,
+            ClaimsPrincipal user,
+            IMediator mediator,
+            IWorkspaceAccessService workspaceAccessService,
+            CancellationToken ct) =>
         {
             var tenantIdClaim = user.FindFirst("tenantId")?.Value;
             if (!Guid.TryParse(tenantIdClaim, out var tenantId))
@@ -27,16 +32,31 @@ public static class DocumentEndpoints
                 return Results.Unauthorized();
             }
 
+            if (!await workspaceAccessService.WorkspaceBelongsToTenantAsync(workspaceId, tenantId, ct))
+            {
+                return Results.Forbid();
+            }
+
             var result = await mediator.Send(new GetDocumentsQuery(tenantId, workspaceId), ct);
             return Results.Ok(result);
         });
 
-        group.MapPost(string.Empty, async (CreateDocumentRequest request, ClaimsPrincipal user, IMediator mediator, CancellationToken ct) =>
+        group.MapPost(string.Empty, async (
+            CreateDocumentRequest request,
+            ClaimsPrincipal user,
+            IMediator mediator,
+            IWorkspaceAccessService workspaceAccessService,
+            CancellationToken ct) =>
         {
             var tenantIdClaim = user.FindFirst("tenantId")?.Value;
             if (!Guid.TryParse(tenantIdClaim, out var tenantId))
             {
                 return Results.Unauthorized();
+            }
+
+            if (!await workspaceAccessService.WorkspaceBelongsToTenantAsync(request.WorkspaceId, tenantId, ct))
+            {
+                return Results.Forbid();
             }
 
             var command = new CreateDocumentCommand(
@@ -57,6 +77,7 @@ public static class DocumentEndpoints
             string? language,
             ClaimsPrincipal user,
             IMediator mediator,
+            IWorkspaceAccessService workspaceAccessService,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
@@ -70,6 +91,11 @@ public static class DocumentEndpoints
             if (!Guid.TryParse(workspaceId, out var workspaceGuid))
             {
                 return Results.BadRequest("workspaceId must be a valid GUID.");
+            }
+
+            if (!await workspaceAccessService.WorkspaceBelongsToTenantAsync(workspaceGuid, tenantId, ct))
+            {
+                return Results.Forbid();
             }
 
             if (file == null || file.Length == 0)

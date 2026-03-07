@@ -96,6 +96,13 @@ public interface ICacheService
     Task<T> GetOrSetAsync<T>(string key, TimeSpan ttl, Func<CancellationToken, Task<T>> factory, CancellationToken cancellationToken = default);
     Task InvalidateAsync(string key, CancellationToken cancellationToken = default);
 }
+
+/// <summary>Validates that a workspace exists and belongs to the given tenant. Used for workspace-scoped authorization.</summary>
+public interface IWorkspaceAccessService
+{
+    Task<bool> WorkspaceBelongsToTenantAsync(Guid workspaceId, Guid tenantId, CancellationToken cancellationToken = default);
+}
+
 public interface IApplicationDbContext
 {
     IQueryable<Tenant> Tenants { get; }

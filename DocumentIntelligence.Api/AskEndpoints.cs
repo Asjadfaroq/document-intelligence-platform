@@ -19,6 +19,7 @@ public static class AskEndpoints
             AskRequestDto request,
             ClaimsPrincipal user,
             IMediator mediator,
+            IWorkspaceAccessService workspaceAccessService,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
@@ -30,6 +31,11 @@ public static class AskEndpoints
             if (!Guid.TryParse(tenantIdClaim, out var tenantId) || !Guid.TryParse(subClaim, out var userId))
             {
                 return Results.Unauthorized();
+            }
+
+            if (!await workspaceAccessService.WorkspaceBelongsToTenantAsync(workspaceId, tenantId, ct))
+            {
+                return Results.Forbid();
             }
 
             var topK = request.TopK <= 0 ? 5 : Math.Min(request.TopK, 10);
