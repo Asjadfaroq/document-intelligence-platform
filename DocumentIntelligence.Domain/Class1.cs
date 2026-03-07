@@ -30,6 +30,17 @@ public class User
     public Tenant Tenant { get; set; } = default!;
 }
 
+public class RefreshToken
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public string TokenHash { get; set; } = default!;
+    public DateTime ExpiresAtUtc { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+
+    public User User { get; set; } = default!;
+}
+
 public class Workspace
 {
     public Guid Id { get; set; }

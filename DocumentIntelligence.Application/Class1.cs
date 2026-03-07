@@ -16,11 +16,15 @@ public record LoginCommand(
     string TenantSlug
 ) : IRequest<AuthResult>;
 
+public record RefreshCommand(string RefreshToken) : IRequest<AuthResult>;
+
 public record AuthResult(
     string AccessToken,
     string TenantId,
     string Email,
-    string Role
+    string Role,
+    string? RefreshToken = null,
+    DateTime? ExpiresAtUtc = null
 );
 
 public record WorkspaceDto(
@@ -49,6 +53,14 @@ public interface IPasswordHasher
 public interface IJwtTokenGenerator
 {
     string GenerateToken(User user);
+    TimeSpan GetAccessTokenLifespan();
+}
+
+public interface IRefreshTokenStore
+{
+    Task<(string Token, DateTime ExpiresAtUtc)> CreateAsync(Guid userId, CancellationToken cancellationToken = default);
+    Task<User?> GetUserByTokenAsync(string token, CancellationToken cancellationToken = default);
+    Task RevokeAsync(string token, CancellationToken cancellationToken = default);
 }
 
 public interface IStorageService
@@ -158,15 +170,18 @@ public class RegisterTenantAndOwnerCommandHandler : IRequestHandler<RegisterTena
     private readonly IApplicationDbContext _db;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IJwtTokenGenerator _jwt;
+    private readonly IRefreshTokenStore _refreshTokenStore;
 
     public RegisterTenantAndOwnerCommandHandler(
         IApplicationDbContext db,
         IPasswordHasher passwordHasher,
-        IJwtTokenGenerator jwt)
+        IJwtTokenGenerator jwt,
+        IRefreshTokenStore refreshTokenStore)
     {
         _db = db;
         _passwordHasher = passwordHasher;
         _jwt = jwt;
+        _refreshTokenStore = refreshTokenStore;
     }
 
     public async Task<AuthResult> Handle(RegisterTenantAndOwnerCommand request, CancellationToken cancellationToken)
@@ -204,13 +219,17 @@ public class RegisterTenantAndOwnerCommandHandler : IRequestHandler<RegisterTena
 
         await _db.SaveChangesAsync(cancellationToken);
 
-        var token = _jwt.GenerateToken(owner);
+        var accessToken = _jwt.GenerateToken(owner);
+        var lifespan = _jwt.GetAccessTokenLifespan();
+        var (refreshToken, _) = await _refreshTokenStore.CreateAsync(owner.Id, cancellationToken);
 
         return new AuthResult(
-            token,
+            accessToken,
             tenant.Id.ToString(),
             owner.Email,
-            owner.Role.ToString());
+            owner.Role.ToString(),
+            refreshToken,
+            DateTime.UtcNow.Add(lifespan));
     }
 }
 
@@ -219,44 +238,75 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, AuthResult>
     private readonly IApplicationDbContext _db;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IJwtTokenGenerator _jwt;
+    private readonly IRefreshTokenStore _refreshTokenStore;
 
     public LoginCommandHandler(
         IApplicationDbContext db,
         IPasswordHasher passwordHasher,
-        IJwtTokenGenerator jwt)
+        IJwtTokenGenerator jwt,
+        IRefreshTokenStore refreshTokenStore)
     {
         _db = db;
         _passwordHasher = passwordHasher;
         _jwt = jwt;
+        _refreshTokenStore = refreshTokenStore;
     }
 
     public async Task<AuthResult> Handle(LoginCommand request, CancellationToken cancellationToken)
     {
         var tenant = _db.Tenants.FirstOrDefault(t => t.Slug == request.TenantSlug);
         if (tenant is null)
-        {
             throw new UnauthorizedAccessException("Invalid credentials.");
-        }
 
         var email = request.Email.ToLowerInvariant();
         var user = _db.Users.FirstOrDefault(u => u.TenantId == tenant.Id && u.Email == email);
-        if (user is null)
-        {
+        if (user is null || !_passwordHasher.Verify(request.Password, user.PasswordHash))
             throw new UnauthorizedAccessException("Invalid credentials.");
-        }
 
-        if (!_passwordHasher.Verify(request.Password, user.PasswordHash))
-        {
-            throw new UnauthorizedAccessException("Invalid credentials.");
-        }
-
-        var token = _jwt.GenerateToken(user);
+        var accessToken = _jwt.GenerateToken(user);
+        var lifespan = _jwt.GetAccessTokenLifespan();
+        var (refreshToken, refreshExpiresAt) = await _refreshTokenStore.CreateAsync(user.Id, cancellationToken);
 
         return new AuthResult(
-            token,
+            accessToken,
             tenant.Id.ToString(),
             user.Email,
-            user.Role.ToString());
+            user.Role.ToString(),
+            refreshToken,
+            DateTime.UtcNow.Add(lifespan));
+    }
+}
+
+public class RefreshCommandHandler : IRequestHandler<RefreshCommand, AuthResult>
+{
+    private readonly IRefreshTokenStore _refreshTokenStore;
+    private readonly IJwtTokenGenerator _jwt;
+
+    public RefreshCommandHandler(IRefreshTokenStore refreshTokenStore, IJwtTokenGenerator jwt)
+    {
+        _refreshTokenStore = refreshTokenStore;
+        _jwt = jwt;
+    }
+
+    public async Task<AuthResult> Handle(RefreshCommand request, CancellationToken cancellationToken)
+    {
+        var user = await _refreshTokenStore.GetUserByTokenAsync(request.RefreshToken, cancellationToken);
+        if (user is null)
+            throw new UnauthorizedAccessException("Invalid or expired refresh token.");
+
+        await _refreshTokenStore.RevokeAsync(request.RefreshToken, cancellationToken);
+        var (newRefreshToken, _) = await _refreshTokenStore.CreateAsync(user.Id, cancellationToken);
+
+        var accessToken = _jwt.GenerateToken(user);
+        var expiresAtUtc = DateTime.UtcNow.Add(_jwt.GetAccessTokenLifespan());
+
+        return new AuthResult(
+            accessToken,
+            user.TenantId.ToString(),
+            user.Email,
+            user.Role.ToString(),
+            newRefreshToken,
+            expiresAtUtc);
     }
 }
 

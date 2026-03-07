@@ -7,6 +7,8 @@ type LoginResponse = {
   tenantId: string;
   email: string;
   role: string;
+  refreshToken?: string;
+  expiresAtUtc?: string;
 };
 
 type Workspace = {
@@ -77,6 +79,7 @@ export default function Home() {
   const [email, setEmail] = useState("owner@acme.com");
   const [password, setPassword] = useState("Password123!");
   const [token, setToken] = useState("");
+  const [refreshToken, setRefreshToken] = useState("");
   const [role, setRole] = useState("");
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspaceId, setWorkspaceId] = useState("");
@@ -90,6 +93,9 @@ export default function Home() {
   const [busyLogin, setBusyLogin] = useState(false);
   const [busyUpload, setBusyUpload] = useState(false);
   const [busyAsk, setBusyAsk] = useState(false);
+  const [busyCreateWorkspace, setBusyCreateWorkspace] = useState(false);
+  const [newWorkspaceName, setNewWorkspaceName] = useState("");
+  const [newWorkspaceDescription, setNewWorkspaceDescription] = useState("");
   const normalizedToken = useMemo(() => normalizeToken(token), [token]);
   const isLoggedIn = Boolean(normalizedToken);
 
@@ -98,21 +104,52 @@ export default function Home() {
     [apiBase, normalizedToken, workspaceId],
   );
 
-  async function loadWorkspaces(jwt: string) {
-    const res = await fetch(`${apiBase}/workspaces`, {
-      headers: {
-        Authorization: `Bearer ${jwt}`,
-      },
-    });
-    const body = await readResponseBody(res);
-    if (!res.ok) {
-      throw new Error(formatError(res.status, body));
+  const canCreateWorkspace = role === "Owner" || role === "Admin";
+
+  async function refreshAndGetNewToken(): Promise<string | null> {
+    if (!refreshToken?.trim()) return null;
+    try {
+      const res = await fetch(`${apiBase}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken: refreshToken.trim() }),
+      });
+      const data = await readResponseBody(res);
+      if (!res.ok || !data || typeof data !== "object" || !("accessToken" in data)) return null;
+      const auth = data as LoginResponse;
+      const newAccess = normalizeToken(auth.accessToken);
+      setToken(newAccess);
+      setRefreshToken(auth.refreshToken ?? "");
+      setRole(auth.role ?? "");
+      return newAccess;
+    } catch {
+      return null;
     }
+  }
+
+  async function fetchWithAuth(url: string, init?: RequestInit): Promise<Response> {
+    let jwt = normalizedToken;
+    let res = await fetch(url, { ...init, headers: { ...init?.headers, Authorization: `Bearer ${jwt}` } as HeadersInit });
+    if (res.status === 401 && refreshToken?.trim()) {
+      const newJwt = await refreshAndGetNewToken();
+      if (newJwt) res = await fetch(url, { ...init, headers: { ...init?.headers, Authorization: `Bearer ${newJwt}` } as HeadersInit });
+    }
+    return res;
+  }
+
+  async function loadWorkspaces(jwt: string) {
+    let res = await fetch(`${apiBase}/workspaces`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    if (res.status === 401) {
+      const newJwt = await refreshAndGetNewToken();
+      if (newJwt) res = await fetch(`${apiBase}/workspaces`, { headers: { Authorization: `Bearer ${newJwt}` } });
+    }
+    const body = await readResponseBody(res);
+    if (!res.ok) throw new Error(formatError(res.status, body));
     const data = Array.isArray(body) ? (body as Workspace[]) : [];
     setWorkspaces(data);
-    if (data.length > 0) {
-      setWorkspaceId(data[0].id);
-    }
+    if (data.length > 0) setWorkspaceId((prev) => prev || data[0].id);
   }
 
   async function handleLogin(e: FormEvent<HTMLFormElement>) {
@@ -140,13 +177,45 @@ export default function Home() {
       const login = body as LoginResponse;
       const jwt = normalizeToken(login.accessToken);
       setToken(jwt);
-      setRole(login.role);
+      setRefreshToken(login.refreshToken ?? "");
+      setRole(login.role ?? "");
       await loadWorkspaces(jwt);
       setStatus("Login successful. Workspace loaded.");
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "Login failed.");
     } finally {
       setBusyLogin(false);
+    }
+  }
+
+  async function handleCreateWorkspace(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!canCreateWorkspace || !newWorkspaceName.trim()) {
+      setStatus("Name is required. Only Owner and Admin can create workspaces.");
+      return;
+    }
+    setBusyCreateWorkspace(true);
+    setStatus("Creating workspace...");
+    try {
+      const res = await fetchWithAuth(`${apiBase}/workspaces`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newWorkspaceName.trim(), description: newWorkspaceDescription.trim() || null }),
+      });
+      const body = await readResponseBody(res);
+      if (!res.ok) {
+        if (res.status === 403) setStatus("Only Owner or Admin can create workspaces.");
+        else throw new Error(formatError(res.status, body));
+        return;
+      }
+      setNewWorkspaceName("");
+      setNewWorkspaceDescription("");
+      await loadWorkspaces(normalizedToken);
+      setStatus("Workspace created. List refreshed.");
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Create workspace failed.");
+    } finally {
+      setBusyCreateWorkspace(false);
     }
   }
 
@@ -179,11 +248,9 @@ export default function Home() {
       const query = new URLSearchParams({ workspaceId: workspaceId.trim() });
       if (language.trim()) query.set("language", language.trim());
 
-      const res = await fetch(`${apiBase}/documents/upload?${query.toString()}`, {
+      const res = await fetchWithAuth(`${apiBase}/documents/upload?${query.toString()}`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${normalizedToken}`,
-        },
+        headers: {},
         body: form,
       });
 
@@ -212,17 +279,10 @@ export default function Home() {
     setBusyAsk(true);
     setStatus("Running RAG query...");
     try {
-      const res = await fetch(`${apiBase}/workspaces/${workspaceId}/ask`, {
+      const res = await fetchWithAuth(`${apiBase}/workspaces/${workspaceId}/ask`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${normalizedToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          question: q.trim(),
-          topK,
-          mode,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: q.trim(), topK, mode }),
       });
 
       const body = await readResponseBody(res);
@@ -330,6 +390,34 @@ export default function Home() {
           </p>
         )}
       </section>
+
+      {canCreateWorkspace && (
+        <section className="rounded border border-zinc-700 p-4">
+          <h2 className="mb-2 text-lg font-medium">Create workspace</h2>
+          <p className="mb-2 text-xs text-zinc-400">Only Owner and Admin can create workspaces.</p>
+          <form className="grid gap-3 md:grid-cols-4" onSubmit={handleCreateWorkspace}>
+            <input
+              className="rounded border border-zinc-600 bg-transparent p-2"
+              placeholder="Workspace name"
+              value={newWorkspaceName}
+              onChange={(e) => setNewWorkspaceName(e.target.value)}
+            />
+            <input
+              className="rounded border border-zinc-600 bg-transparent p-2"
+              placeholder="Description (optional)"
+              value={newWorkspaceDescription}
+              onChange={(e) => setNewWorkspaceDescription(e.target.value)}
+            />
+            <button
+              type="submit"
+              className="rounded bg-indigo-600 p-2 font-medium text-white disabled:opacity-60"
+              disabled={busyCreateWorkspace || !isLoggedIn || !newWorkspaceName.trim()}
+            >
+              {busyCreateWorkspace ? "Creating..." : "Create workspace"}
+            </button>
+          </form>
+        </section>
+      )}
 
       <section className="rounded border border-zinc-700 p-4">
         <h2 className="mb-2 text-lg font-medium">1) Re-upload PDF</h2>

@@ -14,6 +14,8 @@ public record LoginRequest(
     string Email,
     string Password);
 
+public record RefreshRequest(string RefreshToken);
+
 public static class AuthEndpoints
 {
     public static IEndpointRouteBuilder MapAuth(this IEndpointRouteBuilder routes)
@@ -27,7 +29,6 @@ public static class AuthEndpoints
                 request.TenantSlug,
                 request.OwnerEmail,
                 request.OwnerPassword);
-
             var result = await mediator.Send(command, ct);
             return Results.Ok(result);
         });
@@ -38,9 +39,23 @@ public static class AuthEndpoints
                 request.Email,
                 request.Password,
                 request.TenantSlug);
-
             var result = await mediator.Send(command, ct);
             return Results.Ok(result);
+        });
+
+        group.MapPost("/refresh", async (RefreshRequest request, IMediator mediator, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.RefreshToken))
+                return Results.BadRequest("RefreshToken is required.");
+            try
+            {
+                var result = await mediator.Send(new RefreshCommand(request.RefreshToken.Trim()), ct);
+                return Results.Ok(result);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.Unauthorized();
+            }
         });
 
         return routes;

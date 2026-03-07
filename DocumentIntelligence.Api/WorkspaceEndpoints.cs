@@ -30,15 +30,13 @@ public static class WorkspaceEndpoints
         {
             var tenantIdClaim = user.FindFirst("tenantId")?.Value;
             if (!Guid.TryParse(tenantIdClaim, out var tenantId))
-            {
                 return Results.Unauthorized();
-            }
 
             var command = new CreateWorkspaceCommand(tenantId, request.Name, request.Description);
             var created = await mediator.Send(command, ct);
             return Results.Ok(created);
         })
-        .RequireAuthorization(policy => policy.RequireRole("Owner", "Admin", "Member"));
+        .RequireAuthorization("OwnerOrAdmin");
 
         return routes;
     }

@@ -29,7 +29,11 @@ builder.Services.AddCors(options =>
             .AllowAnyMethod();
     });
 });
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("OwnerOrAdmin", policy =>
+        policy.RequireRole("Owner", "Admin"));
+});
 
 var connectionString = builder.Configuration.GetConnectionString("Default");
 
@@ -40,6 +44,7 @@ builder.Services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<Ap
 builder.Services.AddScoped<IVectorSearchService, VectorSearchService>();
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
+builder.Services.AddScoped<IRefreshTokenStore, RefreshTokenStore>();
 builder.Services.AddHttpClient<IStorageService, SupabaseStorageService>();
 builder.Services.AddHttpClient<IEmbeddingService, HuggingFaceEmbeddingService>();
 builder.Services.AddHttpClient<ILLMClient, HuggingFaceLLMClient>();
@@ -70,7 +75,8 @@ if (!string.IsNullOrWhiteSpace(jwtSecret))
                 ValidateIssuerSigningKey = true,
                 ValidIssuer = "document-intelligence",
                 ValidAudience = "document-intelligence",
-                IssuerSigningKey = new SymmetricSecurityKey(key)
+                IssuerSigningKey = new SymmetricSecurityKey(key),
+                ClockSkew = TimeSpan.FromSeconds(30)
             };
         });
 }

@@ -31,6 +31,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<DocumentChunk> DocumentChunks => Set<DocumentChunk>();
     public DbSet<Question> Questions => Set<Question>();
     public DbSet<Answer> Answers => Set<Answer>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     IQueryable<Tenant> IApplicationDbContext.Tenants => Tenants.AsQueryable();
     IQueryable<User> IApplicationDbContext.Users => Users.AsQueryable();
@@ -145,6 +146,18 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
                 .HasForeignKey(x => x.QuestionId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
+
+        modelBuilder.Entity<RefreshToken>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.TokenHash).IsRequired().HasMaxLength(64);
+            entity.HasIndex(x => x.TokenHash);
+
+            entity.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
     }
 }
 
@@ -196,16 +209,24 @@ public class JwtTokenGenerator : IJwtTokenGenerator
         _configuration = configuration;
     }
 
+    public TimeSpan GetAccessTokenLifespan()
+    {
+        var minutes = 15;
+        var config = _configuration["Jwt:AccessTokenExpirationMinutes"] ?? _configuration["Jwt__AccessTokenExpirationMinutes"];
+        if (!string.IsNullOrWhiteSpace(config) && int.TryParse(config, out var parsed) && parsed > 0)
+            minutes = Math.Min(parsed, 60 * 24); // cap at 24h
+        return TimeSpan.FromMinutes(minutes);
+    }
+
     public string GenerateToken(User user)
     {
-        var secret = _configuration["Jwt:Secret"];
+        var secret = _configuration["Jwt:Secret"] ?? _configuration["Jwt__Secret"];
         if (string.IsNullOrWhiteSpace(secret))
-        {
             throw new InvalidOperationException("JWT secret is not configured.");
-        }
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+        var lifespan = GetAccessTokenLifespan();
 
         var claims = new List<Claim>
         {
@@ -219,10 +240,81 @@ public class JwtTokenGenerator : IJwtTokenGenerator
             issuer: "document-intelligence",
             audience: "document-intelligence",
             claims: claims,
-            expires: DateTime.UtcNow.AddHours(1),
+            expires: DateTime.UtcNow.Add(lifespan),
             signingCredentials: creds);
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+}
+
+public class RefreshTokenStore : IRefreshTokenStore
+{
+    private readonly ApplicationDbContext _db;
+    private readonly IConfiguration _configuration;
+
+    public RefreshTokenStore(ApplicationDbContext db, IConfiguration configuration)
+    {
+        _db = db;
+        _configuration = configuration;
+    }
+
+    private static string HashToken(string token)
+    {
+        var bytes = Encoding.UTF8.GetBytes(token);
+        var hash = SHA256.HashData(bytes);
+        return Convert.ToHexString(hash);
+    }
+
+    private int GetRefreshTokenExpirationDays()
+    {
+        var config = _configuration["Jwt:RefreshTokenExpirationDays"] ?? _configuration["Jwt__RefreshTokenExpirationDays"];
+        if (!string.IsNullOrWhiteSpace(config) && int.TryParse(config, out var days) && days > 0)
+            return Math.Min(days, 30);
+        return 7;
+    }
+
+    public async Task<(string Token, DateTime ExpiresAtUtc)> CreateAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var bytes = new byte[48];
+        RandomNumberGenerator.Fill(bytes);
+        var token = Convert.ToBase64String(bytes).Replace("+", "-").Replace("/", "_").TrimEnd('=');
+        var hash = HashToken(token);
+        var expiresAt = DateTime.UtcNow.AddDays(GetRefreshTokenExpirationDays());
+
+        var entity = new RefreshToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TokenHash = hash,
+            ExpiresAtUtc = expiresAt,
+            CreatedAtUtc = DateTime.UtcNow
+        };
+        await _db.RefreshTokens.AddAsync(entity, cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
+        return (token, expiresAt);
+    }
+
+    public async Task<User?> GetUserByTokenAsync(string token, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(token)) return null;
+        var hash = HashToken(token);
+        var refreshToken = await _db.RefreshTokens
+            .Where(rt => rt.TokenHash == hash && rt.ExpiresAtUtc > DateTime.UtcNow)
+            .Include(rt => rt.User)
+            .ThenInclude(u => u.Tenant)
+            .FirstOrDefaultAsync(cancellationToken);
+        return refreshToken?.User;
+    }
+
+    public async Task RevokeAsync(string token, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(token)) return;
+        var hash = HashToken(token);
+        var existing = await _db.RefreshTokens
+            .Where(rt => rt.TokenHash == hash)
+            .ToListAsync(cancellationToken);
+        _db.RefreshTokens.RemoveRange(existing);
+        await _db.SaveChangesAsync(cancellationToken);
     }
 }
 
