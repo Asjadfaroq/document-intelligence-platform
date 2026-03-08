@@ -19,6 +19,7 @@ const AUTH_KEY = "di_auth";
 type AuthStored = {
   apiBase?: string;
   token?: string;
+  refreshToken?: string;
   role?: string;
 };
 
@@ -58,6 +59,36 @@ function getStoredAuth(): AuthStored | null {
   }
 }
 
+type RefreshResponse = { accessToken: string; refreshToken?: string; role?: string };
+
+async function refreshAuth(apiBase: string, refreshToken: string): Promise<AuthStored | null> {
+  try {
+    const res = await fetch(`${apiBase}/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken: refreshToken.trim() }),
+    });
+    const data = (await res.json()) as RefreshResponse;
+    if (!res.ok || !data?.accessToken) return null;
+    const newToken = data.accessToken.replace(/^Bearer\s+/i, "").trim();
+    const stored = getStoredAuth();
+    const updated: AuthStored = {
+      ...stored,
+      token: newToken,
+      refreshToken: data.refreshToken ?? stored?.refreshToken,
+      role: data.role ?? stored?.role,
+    };
+    try {
+      localStorage.setItem(AUTH_KEY, JSON.stringify(updated));
+    } catch {
+      /* ignore */
+    }
+    return updated;
+  } catch {
+    return null;
+  }
+}
+
 export default function AdminPage() {
   const [auth, setAuth] = useState<AuthStored | null>(null);
   const [overview, setOverview] = useState<TenantOverview | null>(null);
@@ -85,10 +116,25 @@ export default function AdminPage() {
     setError(null);
     setLoading(true);
 
+    let token = stored.token.replace(/^Bearer\s+/i, "").trim();
+    let currentStored: AuthStored | null = stored;
+
     try {
-      const res = await fetch(`${apiBase}/admin/tenant/overview`, {
-        headers: { Authorization: `Bearer ${stored.token.replace(/^Bearer\s+/i, "").trim()}` },
+      let res = await fetch(`${apiBase}/admin/tenant/overview`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
+
+      if (res.status === 401 && stored.refreshToken?.trim()) {
+        const refreshed = await refreshAuth(apiBase, stored.refreshToken);
+        if (refreshed?.token) {
+          currentStored = refreshed;
+          token = refreshed.token.replace(/^Bearer\s+/i, "").trim();
+          setAuth(refreshed);
+          res = await fetch(`${apiBase}/admin/tenant/overview`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+        }
+      }
 
       if (res.status === 403) {
         setError("Access denied. Owner or Admin role required.");
@@ -109,6 +155,7 @@ export default function AdminPage() {
 
       const data = (await res.json()) as TenantOverview;
       setOverview(data);
+      setAuth(currentStored);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load overview.");
     } finally {

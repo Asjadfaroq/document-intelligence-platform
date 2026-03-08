@@ -17,7 +17,7 @@ public static class DocumentEndpoints
     public static IEndpointRouteBuilder MapDocuments(this IEndpointRouteBuilder routes)
     {
         var group = routes.MapGroup("/documents")
-            .RequireAuthorization();
+            .RequireAuthorization("TenantUser");
 
         group.MapGet("/workspaces/{workspaceId:guid}", async (
             Guid workspaceId,
@@ -69,7 +69,7 @@ public static class DocumentEndpoints
             var created = await mediator.Send(command, ct);
             return Results.Ok(created);
         })
-        .RequireAuthorization(policy => policy.RequireRole("Owner", "Admin", "Member"));
+        ;
 
         group.MapPost("/upload", async (
             string workspaceId,

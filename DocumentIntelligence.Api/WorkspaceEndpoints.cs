@@ -12,7 +12,7 @@ public static class WorkspaceEndpoints
     public static IEndpointRouteBuilder MapWorkspaces(this IEndpointRouteBuilder routes)
     {
         var group = routes.MapGroup("/workspaces")
-            .RequireAuthorization();
+            .RequireAuthorization("TenantUser");
 
         group.MapGet(string.Empty, async (ClaimsPrincipal user, IMediator mediator, CancellationToken ct) =>
         {

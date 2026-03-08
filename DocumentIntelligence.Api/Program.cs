@@ -77,6 +77,8 @@ builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("OwnerOrAdmin", policy =>
         policy.RequireRole("Owner", "Admin"));
+    options.AddPolicy("TenantUser", policy =>
+        policy.RequireRole("Owner", "Admin", "Member"));
 });
 
 var connectionString = builder.Configuration.GetConnectionString("Default");
@@ -116,6 +118,10 @@ if (!string.IsNullOrWhiteSpace(jwtSecret))
         })
         .AddJwtBearer(options =>
         {
+            var clockSkewSeconds = 30;
+            var skewConfig = builder.Configuration["Jwt:ClockSkewSeconds"] ?? builder.Configuration["Jwt__ClockSkewSeconds"];
+            if (!string.IsNullOrWhiteSpace(skewConfig) && int.TryParse(skewConfig, out var parsed) && parsed >= 0)
+                clockSkewSeconds = Math.Min(parsed, 300);
             options.TokenValidationParameters = new TokenValidationParameters
             {
                 ValidateIssuer = true,
@@ -124,7 +130,7 @@ if (!string.IsNullOrWhiteSpace(jwtSecret))
                 ValidIssuer = "document-intelligence",
                 ValidAudience = "document-intelligence",
                 IssuerSigningKey = new SymmetricSecurityKey(key),
-                ClockSkew = TimeSpan.FromSeconds(30)
+                ClockSkew = TimeSpan.FromSeconds(clockSkewSeconds)
             };
         });
 }
@@ -159,7 +165,8 @@ app.MapGet("/metrics/basic", async (ApplicationDbContext db, CancellationToken c
     var documentsCount = await db.Documents.CountAsync(ct);
     var questionsCount = await db.Questions.CountAsync(ct);
     return Results.Ok(new { documentsCount, questionsCount });
-});
+})
+.RequireAuthorization("OwnerOrAdmin");
 
 app.MapAuth();
 app.MapWorkspaces();

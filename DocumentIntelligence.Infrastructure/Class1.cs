@@ -40,12 +40,17 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     IQueryable<Workspace> IApplicationDbContext.Workspaces => Workspaces.AsQueryable();
     IQueryable<Document> IApplicationDbContext.Documents => Documents.AsQueryable();
 
-    public async Task AddAsync<TEntity>(TEntity entity, CancellationToken cancellationToken) where TEntity : class
+    public override async ValueTask<EntityEntry<TEntity>> AddAsync<TEntity>(TEntity entity, CancellationToken cancellationToken = default) where TEntity : class
     {
-        await Set<TEntity>().AddAsync(entity, cancellationToken);
+        return await base.AddAsync(entity, cancellationToken);
     }
 
-    public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
+    async Task IApplicationDbContext.AddAsync<TEntity>(TEntity entity, CancellationToken cancellationToken)
+    {
+        await AddAsync(entity, cancellationToken);
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         return base.SaveChangesAsync(cancellationToken);
     }
