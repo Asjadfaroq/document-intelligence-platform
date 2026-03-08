@@ -16,23 +16,21 @@ public static class WorkspaceEndpoints
 
         group.MapGet(string.Empty, async (ClaimsPrincipal user, IMediator mediator, CancellationToken ct) =>
         {
-            var tenantIdClaim = user.FindFirst("tenantId")?.Value;
-            if (!Guid.TryParse(tenantIdClaim, out var tenantId))
-            {
+            var tenantId = user.GetTenantId();
+            if (tenantId == null)
                 return Results.Unauthorized();
-            }
 
-            var result = await mediator.Send(new GetWorkspacesQuery(tenantId), ct);
+            var result = await mediator.Send(new GetWorkspacesQuery(tenantId.Value), ct);
             return Results.Ok(result);
         });
 
         group.MapPost(string.Empty, async (CreateWorkspaceRequest request, ClaimsPrincipal user, IMediator mediator, CancellationToken ct) =>
         {
-            var tenantIdClaim = user.FindFirst("tenantId")?.Value;
-            if (!Guid.TryParse(tenantIdClaim, out var tenantId))
+            var tenantId = user.GetTenantId();
+            if (tenantId == null)
                 return Results.Unauthorized();
 
-            var command = new CreateWorkspaceCommand(tenantId, request.Name, request.Description);
+            var command = new CreateWorkspaceCommand(tenantId.Value, request.Name, request.Description);
             var created = await mediator.Send(command, ct);
             return Results.Ok(created);
         })

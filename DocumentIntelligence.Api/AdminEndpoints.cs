@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using System.IdentityModel.Tokens.Jwt;
 using DocumentIntelligence.Application;
 using Microsoft.AspNetCore.Authorization;
 
@@ -17,13 +16,11 @@ public static class AdminEndpoints
             ITenantOverviewProvider overviewProvider,
             CancellationToken ct) =>
         {
-            var tenantIdClaim = user.FindFirst("tenantId")?.Value;
-            if (!Guid.TryParse(tenantIdClaim, out var tenantId))
-            {
+            var tenantId = user.GetTenantId();
+            if (tenantId == null)
                 return Results.Unauthorized();
-            }
 
-            var overview = await overviewProvider.GetOverviewAsync(tenantId, ct);
+            var overview = await overviewProvider.GetOverviewAsync(tenantId.Value, ct);
             return Results.Ok(overview);
         });
 

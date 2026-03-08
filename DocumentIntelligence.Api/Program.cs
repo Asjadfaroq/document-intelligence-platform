@@ -3,7 +3,6 @@ using System.Text;
 using DocumentIntelligence.Application;
 using DocumentIntelligence.Infrastructure;
 using DocumentIntelligence.Api;
-using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;

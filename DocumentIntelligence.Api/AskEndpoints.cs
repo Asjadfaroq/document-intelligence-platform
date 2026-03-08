@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using System.IdentityModel.Tokens.Jwt;
 using DocumentIntelligence.Application;
 using MediatR;
 
@@ -23,17 +22,12 @@ public static class AskEndpoints
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
-            var tenantIdClaim = user.FindFirst("tenantId")?.Value;
-            var subClaim =
-                user.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
-                ?? user.FindFirst("sub")?.Value
-                ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (!Guid.TryParse(tenantIdClaim, out var tenantId) || !Guid.TryParse(subClaim, out var userId))
-            {
+            var tenantId = user.GetTenantId();
+            var userId = user.GetUserId();
+            if (tenantId == null || userId == null)
                 return Results.Unauthorized();
-            }
 
-            if (!await workspaceAccessService.WorkspaceBelongsToTenantAsync(workspaceId, tenantId, ct))
+            if (!await workspaceAccessService.WorkspaceBelongsToTenantAsync(workspaceId, tenantId.Value, ct))
             {
                 return Results.Forbid();
             }
@@ -48,9 +42,9 @@ public static class AskEndpoints
                 : request.LanguageHint!.Trim();
 
             var command = new AskQuestionCommand(
-                tenantId,
+                tenantId.Value,
                 workspaceId,
-                userId,
+                userId.Value,
                 request.Question,
                 topK,
                 mode,
@@ -61,7 +55,7 @@ public static class AskEndpoints
             var log = loggerFactory.CreateLogger("DocumentIntelligence.Ask");
             log.LogInformation(
                 "Ask completed: WorkspaceId={WorkspaceId}, TenantId={TenantId}, LatencyMs={LatencyMs}, SourceCount={SourceCount}",
-                workspaceId, tenantId, result.LatencyMs, result.Sources.Count);
+                workspaceId, tenantId.Value, result.LatencyMs, result.Sources.Count);
 
             return Results.Ok(result);
         });

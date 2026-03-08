@@ -26,18 +26,16 @@ public static class DocumentEndpoints
             IWorkspaceAccessService workspaceAccessService,
             CancellationToken ct) =>
         {
-            var tenantIdClaim = user.FindFirst("tenantId")?.Value;
-            if (!Guid.TryParse(tenantIdClaim, out var tenantId))
-            {
+            var tenantId = user.GetTenantId();
+            if (tenantId == null)
                 return Results.Unauthorized();
-            }
 
-            if (!await workspaceAccessService.WorkspaceBelongsToTenantAsync(workspaceId, tenantId, ct))
+            if (!await workspaceAccessService.WorkspaceBelongsToTenantAsync(workspaceId, tenantId.Value, ct))
             {
                 return Results.Forbid();
             }
 
-            var result = await mediator.Send(new GetDocumentsQuery(tenantId, workspaceId), ct);
+            var result = await mediator.Send(new GetDocumentsQuery(tenantId.Value, workspaceId), ct);
             return Results.Ok(result);
         });
 
@@ -48,19 +46,17 @@ public static class DocumentEndpoints
             IWorkspaceAccessService workspaceAccessService,
             CancellationToken ct) =>
         {
-            var tenantIdClaim = user.FindFirst("tenantId")?.Value;
-            if (!Guid.TryParse(tenantIdClaim, out var tenantId))
-            {
+            var tenantId = user.GetTenantId();
+            if (tenantId == null)
                 return Results.Unauthorized();
-            }
 
-            if (!await workspaceAccessService.WorkspaceBelongsToTenantAsync(request.WorkspaceId, tenantId, ct))
+            if (!await workspaceAccessService.WorkspaceBelongsToTenantAsync(request.WorkspaceId, tenantId.Value, ct))
             {
                 return Results.Forbid();
             }
 
             var command = new CreateDocumentCommand(
-                tenantId,
+                tenantId.Value,
                 request.WorkspaceId,
                 request.FileName,
                 request.StoragePath,
@@ -68,8 +64,7 @@ public static class DocumentEndpoints
 
             var created = await mediator.Send(command, ct);
             return Results.Ok(created);
-        })
-        ;
+        });
 
         group.MapPost("/upload", async (
             string workspaceId,
@@ -82,18 +77,16 @@ public static class DocumentEndpoints
             CancellationToken ct) =>
         {
             var log = loggerFactory.CreateLogger("DocumentIntelligence.Documents");
-            var tenantIdClaim = user.FindFirst("tenantId")?.Value;
-            if (!Guid.TryParse(tenantIdClaim, out var tenantId))
-            {
+            var tenantId = user.GetTenantId();
+            if (tenantId == null)
                 return Results.Unauthorized();
-            }
 
             if (!Guid.TryParse(workspaceId, out var workspaceGuid))
             {
                 return Results.BadRequest("workspaceId must be a valid GUID.");
             }
 
-            if (!await workspaceAccessService.WorkspaceBelongsToTenantAsync(workspaceGuid, tenantId, ct))
+            if (!await workspaceAccessService.WorkspaceBelongsToTenantAsync(workspaceGuid, tenantId.Value, ct))
             {
                 return Results.Forbid();
             }
@@ -106,7 +99,7 @@ public static class DocumentEndpoints
             await using var stream = file.OpenReadStream();
 
             var command = new UploadDocumentCommand(
-                tenantId,
+                tenantId.Value,
                 workspaceGuid,
                 file.FileName,
                 stream,
@@ -117,7 +110,7 @@ public static class DocumentEndpoints
                 var document = await mediator.Send(command, ct);
                 log.LogInformation(
                     "Document uploaded and enqueued: DocumentId={DocumentId}, WorkspaceId={WorkspaceId}, FileName={FileName}, TenantId={TenantId}",
-                    document.Id, workspaceGuid, file.FileName, tenantId);
+                    document.Id, workspaceGuid, file.FileName, tenantId.Value);
                 return Results.Ok(new UploadDocumentResponse(document));
             }
             catch (Exception ex)

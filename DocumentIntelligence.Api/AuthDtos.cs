@@ -174,12 +174,12 @@ public static class AuthEndpoints
 
         group.MapGet("/me", [Authorize] (ClaimsPrincipal user) =>
         {
-            var tenantId = user.FindFirst("tenantId")?.Value;
-            var email = user.FindFirst(ClaimTypes.Email)?.Value ?? user.FindFirst("email")?.Value;
-            var role = user.FindFirst(ClaimTypes.Role)?.Value ?? user.FindFirst("role")?.Value;
-            if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(email) || string.IsNullOrEmpty(role))
+            var tenantId = user.GetTenantId();
+            var email = user.GetEmail();
+            var role = user.GetRole();
+            if (tenantId == null || string.IsNullOrEmpty(email) || string.IsNullOrEmpty(role))
                 return Results.Unauthorized();
-            return Results.Ok(new AuthResponseBody(tenantId, email, role));
+            return Results.Ok(new AuthResponseBody(tenantId.Value.ToString(), email, role));
         }).RequireAuthorization("TenantUser");
 
         return routes;

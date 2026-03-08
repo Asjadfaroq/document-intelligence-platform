@@ -55,7 +55,7 @@ public static class CachingServiceCollectionExtensions
             var port = uri.Port > 0 ? uri.Port : 6379;
             var options = ConfigurationOptions.Parse($"{uri.Host}:{port}");
             options.Password = password;
-            options.Ssl = uri.Scheme.Equals("rediss", StringComparison.OrdinalIgnoreCase) || value.StartsWith("rediss://", StringComparison.OrdinalIgnoreCase);
+            options.Ssl = uri.Scheme.Equals("rediss", StringComparison.OrdinalIgnoreCase);
             options.AbortOnConnectFail = false;
             if (options.Ssl == false && (value.Contains("upstash.io", StringComparison.OrdinalIgnoreCase)))
                 options.Ssl = true;
