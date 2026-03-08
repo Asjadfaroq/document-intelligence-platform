@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getApiBase, readResponseBody, formatError, AUTH_KEY, StoredPrefill, AuthResponse } from "./lib/api";
+import CreateWorkspaceModal from "./components/CreateWorkspaceModal";
 
 type Workspace = {
   id: string;
@@ -77,9 +78,7 @@ export default function Home() {
   const [authChecked, setAuthChecked] = useState(false);
   const [busyUpload, setBusyUpload] = useState(false);
   const [busyAsk, setBusyAsk] = useState(false);
-  const [busyCreateWorkspace, setBusyCreateWorkspace] = useState(false);
-  const [newWorkspaceName, setNewWorkspaceName] = useState("");
-  const [newWorkspaceDescription, setNewWorkspaceDescription] = useState("");
+  const [showCreateWorkspaceModal, setShowCreateWorkspaceModal] = useState(false);
   const isLoggedIn = Boolean(role);
 
   const canCallApi = useMemo(
@@ -178,35 +177,25 @@ export default function Home() {
     router.replace("/signin");
   }
 
-  async function handleCreateWorkspace(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!canCreateWorkspace || !newWorkspaceName.trim()) {
-      setStatus("Name is required. Only Owner and Admin can create workspaces.");
-      return;
+  async function handleCreateWorkspaceSubmit(
+    name: string,
+    description: string | null,
+  ): Promise<string | null> {
+    const res = await fetchWithAuth(`${getApiBase()}/workspaces`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, description }),
+    });
+    const body = await readResponseBody(res);
+    if (!res.ok) {
+      if (res.status === 403) throw new Error("Only Owner or Admin can create workspaces.");
+      throw new Error(formatError(res.status, body));
     }
-    setBusyCreateWorkspace(true);
-    setStatus("Creating workspace...");
-    try {
-      const res = await fetchWithAuth(`${getApiBase()}/workspaces`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newWorkspaceName.trim(), description: newWorkspaceDescription.trim() || null }),
-      });
-      const body = await readResponseBody(res);
-      if (!res.ok) {
-        if (res.status === 403) setStatus("Only Owner or Admin can create workspaces.");
-        else throw new Error(formatError(res.status, body));
-        return;
-      }
-      setNewWorkspaceName("");
-      setNewWorkspaceDescription("");
-      await loadWorkspaces();
-      setStatus("Workspace created. List refreshed.");
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : "Create workspace failed.");
-    } finally {
-      setBusyCreateWorkspace(false);
-    }
+    const data = body as { id: string };
+    await loadWorkspaces();
+    setWorkspaceId(data.id);
+    setStatus("Workspace created.");
+    return data.id;
   }
 
   async function handleRefreshWorkspaces() {
@@ -375,36 +364,23 @@ export default function Home() {
           >
             Refresh Workspaces
           </button>
+          {canCreateWorkspace && (
+            <button
+              type="button"
+              className="rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+              onClick={() => setShowCreateWorkspaceModal(true)}
+            >
+              Create workspace
+            </button>
+          )}
         </div>
       </section>
 
-      {canCreateWorkspace && (
-        <section className="rounded border border-zinc-700 p-4">
-          <h2 className="mb-2 text-lg font-medium">Create workspace</h2>
-          <p className="mb-2 text-xs text-zinc-400">Only Owner and Admin can create workspaces.</p>
-          <form className="grid gap-3 md:grid-cols-4" onSubmit={handleCreateWorkspace}>
-            <input
-              className="rounded border border-zinc-600 bg-transparent p-2"
-              placeholder="Workspace name"
-              value={newWorkspaceName}
-              onChange={(e) => setNewWorkspaceName(e.target.value)}
-            />
-            <input
-              className="rounded border border-zinc-600 bg-transparent p-2"
-              placeholder="Description (optional)"
-              value={newWorkspaceDescription}
-              onChange={(e) => setNewWorkspaceDescription(e.target.value)}
-            />
-            <button
-              type="submit"
-              className="rounded bg-indigo-600 p-2 font-medium text-white disabled:opacity-60"
-              disabled={busyCreateWorkspace || !isLoggedIn || !newWorkspaceName.trim()}
-            >
-              {busyCreateWorkspace ? "Creating..." : "Create workspace"}
-            </button>
-          </form>
-        </section>
-      )}
+      <CreateWorkspaceModal
+        open={showCreateWorkspaceModal}
+        onClose={() => setShowCreateWorkspaceModal(false)}
+        onSubmit={handleCreateWorkspaceSubmit}
+      />
 
       <section className="rounded border border-zinc-700 p-4">
         <h2 className="mb-2 text-lg font-medium">1) Re-upload PDF</h2>
