@@ -97,6 +97,12 @@ public interface ICacheService
     Task InvalidateAsync(string key, CancellationToken cancellationToken = default);
 }
 
+/// <summary>Rate limiting (e.g. Redis-backed). Returns true if the request is allowed, false if rate limited.</summary>
+public interface IRateLimitService
+{
+    Task<bool> AllowAsync(string scope, string key, int limit, int windowSeconds, CancellationToken cancellationToken = default);
+}
+
 /// <summary>Validates that a workspace exists and belongs to the given tenant. Used for workspace-scoped authorization.</summary>
 public interface IWorkspaceAccessService
 {

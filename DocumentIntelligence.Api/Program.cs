@@ -70,7 +70,8 @@ builder.Services.AddCors(options =>
                 return false;
             })
             .AllowAnyHeader()
-            .AllowAnyMethod();
+            .AllowAnyMethod()
+            .AllowCredentials();
     });
 });
 builder.Services.AddAuthorization(options =>
@@ -86,15 +87,15 @@ var connectionString = builder.Configuration.GetConnectionString("Default");
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString, npgsql => npgsql.UseVector()));
 
-builder.Services.AddMemoryCache();
-builder.Services.AddSingleton<ICacheService, InMemoryCacheService>();
+builder.Services.AddDocumentIntelligenceCaching(builder.Configuration);
 builder.Services.AddScoped<IWorkspaceAccessService, WorkspaceAccessService>();
 builder.Services.AddScoped<ITenantOverviewProvider, TenantOverviewProvider>();
 builder.Services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<ApplicationDbContext>());
 builder.Services.AddScoped<IVectorSearchService, VectorSearchService>();
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
-builder.Services.AddScoped<IRefreshTokenStore, RefreshTokenStore>();
+if (string.IsNullOrWhiteSpace(builder.Configuration.GetRedisConnectionString()))
+    builder.Services.AddScoped<IRefreshTokenStore, RefreshTokenStore>();
 builder.Services.AddHttpClient<IStorageService, SupabaseStorageService>();
 builder.Services.AddHttpClient<IEmbeddingService, HuggingFaceEmbeddingService>();
 builder.Services.AddHttpClient<ILLMClient, HuggingFaceLLMClient>();
@@ -131,6 +132,15 @@ if (!string.IsNullOrWhiteSpace(jwtSecret))
                 ValidAudience = "document-intelligence",
                 IssuerSigningKey = new SymmetricSecurityKey(key),
                 ClockSkew = TimeSpan.FromSeconds(clockSkewSeconds)
+            };
+            options.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
+            {
+                OnMessageReceived = ctx =>
+                {
+                    var token = ctx.Request.Cookies["di_access"];
+                    if (!string.IsNullOrEmpty(token)) ctx.Token = token;
+                    return Task.CompletedTask;
+                }
             };
         });
 }

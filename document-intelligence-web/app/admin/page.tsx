@@ -16,12 +16,8 @@ import {
 
 const AUTH_KEY = "di_auth";
 
-type AuthStored = {
-  apiBase?: string;
-  token?: string;
-  refreshToken?: string;
-  role?: string;
-};
+type StoredPrefill = { apiBase?: string; tenantSlug?: string };
+type AuthMe = { tenantId: string; email: string; role: string };
 
 type DocCountPerWorkspace = { workspaceId: string; workspaceName: string; documentCount: number };
 type QuestionsPerDay = { date: string; count: number };
@@ -49,91 +45,55 @@ type TenantOverview = {
   topDocumentsByUsage?: TopDocumentUsage[];
 };
 
-function getStoredAuth(): AuthStored | null {
-  if (typeof window === "undefined") return null;
+function getApiBase(): string {
+  if (typeof window === "undefined") return process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5224";
   try {
     const raw = localStorage.getItem(AUTH_KEY);
-    return raw ? (JSON.parse(raw) as AuthStored) : null;
+    const prefill = raw ? (JSON.parse(raw) as StoredPrefill) : null;
+    return (prefill?.apiBase ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5224").trim();
   } catch {
-    return null;
-  }
-}
-
-type RefreshResponse = { accessToken: string; refreshToken?: string; role?: string };
-
-async function refreshAuth(apiBase: string, refreshToken: string): Promise<AuthStored | null> {
-  try {
-    const res = await fetch(`${apiBase}/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken: refreshToken.trim() }),
-    });
-    const data = (await res.json()) as RefreshResponse;
-    if (!res.ok || !data?.accessToken) return null;
-    const newToken = data.accessToken.replace(/^Bearer\s+/i, "").trim();
-    const stored = getStoredAuth();
-    const updated: AuthStored = {
-      ...stored,
-      token: newToken,
-      refreshToken: data.refreshToken ?? stored?.refreshToken,
-      role: data.role ?? stored?.role,
-    };
-    try {
-      localStorage.setItem(AUTH_KEY, JSON.stringify(updated));
-    } catch {
-      /* ignore */
-    }
-    return updated;
-  } catch {
-    return null;
+    return process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5224";
   }
 }
 
 export default function AdminPage() {
-  const [auth, setAuth] = useState<AuthStored | null>(null);
   const [overview, setOverview] = useState<TenantOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const stored = getStoredAuth();
-    setAuth(stored);
-
-    if (!stored?.token?.trim()) {
-      setError("Please log in on the home page first.");
-      setLoading(false);
-      return;
-    }
-
-    const role = (stored.role ?? "").toString();
-    if (role !== "Owner" && role !== "Admin") {
-      setError("Access denied. This page is for Owner or Admin only.");
-      setLoading(false);
-      return;
-    }
-
-    const apiBase = (stored.apiBase ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5224").trim();
+    const apiBase = getApiBase();
     setError(null);
     setLoading(true);
 
-    let token = stored.token.replace(/^Bearer\s+/i, "").trim();
-    let currentStored: AuthStored | null = stored;
-
     try {
-      let res = await fetch(`${apiBase}/admin/tenant/overview`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      let meRes = await fetch(`${apiBase}/auth/me`, { credentials: "include" });
+      if (meRes.status === 401) {
+        setError("Please log in on the home page first.");
+        setLoading(false);
+        return;
+      }
+      if (!meRes.ok) {
+        setError("Failed to verify session.");
+        setLoading(false);
+        return;
+      }
+      const me = (await meRes.json()) as AuthMe;
+      if (me.role !== "Owner" && me.role !== "Admin") {
+        setError("Access denied. This page is for Owner or Admin only.");
+        setLoading(false);
+        return;
+      }
 
-      if (res.status === 401 && stored.refreshToken?.trim()) {
-        const refreshed = await refreshAuth(apiBase, stored.refreshToken);
-        if (refreshed?.token) {
-          currentStored = refreshed;
-          token = refreshed.token.replace(/^Bearer\s+/i, "").trim();
-          setAuth(refreshed);
-          res = await fetch(`${apiBase}/admin/tenant/overview`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-        }
+      let res = await fetch(`${apiBase}/admin/tenant/overview`, { credentials: "include" });
+      if (res.status === 401) {
+        const refreshRes = await fetch(`${apiBase}/auth/refresh`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+        if (refreshRes.ok) res = await fetch(`${apiBase}/admin/tenant/overview`, { credentials: "include" });
       }
 
       if (res.status === 403) {
@@ -155,7 +115,6 @@ export default function AdminPage() {
 
       const data = (await res.json()) as TenantOverview;
       setOverview(data);
-      setAuth(currentStored);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load overview.");
     } finally {

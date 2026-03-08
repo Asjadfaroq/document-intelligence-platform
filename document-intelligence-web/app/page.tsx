@@ -1,15 +1,13 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
-type LoginResponse = {
-  accessToken: string;
-  tenantId: string;
-  email: string;
-  role: string;
-  refreshToken?: string;
-  expiresAtUtc?: string;
-};
+const AUTH_KEY = "di_auth";
+
+type StoredPrefill = { apiBase?: string; tenantSlug?: string };
+
+/** Auth response (tokens are in HttpOnly cookies). */
+type AuthResponse = { tenantId: string; email: string; role: string };
 
 type Workspace = {
   id: string;
@@ -59,10 +57,6 @@ async function readResponseBody(res: Response): Promise<unknown | null> {
   }
 }
 
-function normalizeToken(raw: string): string {
-  return raw.replace(/^Bearer\s+/i, "").replace(/\r/g, "").replace(/\n/g, "").trim();
-}
-
 function formatError(status: number, body: unknown): string {
   if (typeof body === "string" && body.trim().length > 0) {
     return body;
@@ -98,8 +92,6 @@ export default function Home() {
   const [tenantSlug, setTenantSlug] = useState("acme");
   const [email, setEmail] = useState("owner@acme.com");
   const [password, setPassword] = useState("Password123!");
-  const [token, setToken] = useState("");
-  const [refreshToken, setRefreshToken] = useState("");
   const [role, setRole] = useState("");
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspaceId, setWorkspaceId] = useState("");
@@ -117,72 +109,90 @@ export default function Home() {
   const [busyCreateWorkspace, setBusyCreateWorkspace] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
   const [newWorkspaceDescription, setNewWorkspaceDescription] = useState("");
-  const normalizedToken = useMemo(() => normalizeToken(token), [token]);
-  const isLoggedIn = Boolean(normalizedToken);
+  const isLoggedIn = Boolean(role);
 
   const canCallApi = useMemo(
-    () => Boolean(apiBase.trim() && normalizedToken && workspaceId.trim()),
-    [apiBase, normalizedToken, workspaceId],
+    () => Boolean(apiBase.trim() && isLoggedIn && workspaceId.trim()),
+    [apiBase, isLoggedIn, workspaceId],
   );
 
   const canCreateWorkspace = role === "Owner" || role === "Admin";
 
-  async function refreshAndGetNewToken(): Promise<string | null> {
-    if (!refreshToken?.trim()) return null;
+  function setUserFromAuth(a: AuthResponse) {
+    setEmail(a.email ?? "");
+    setRole(a.role ?? "");
+  }
+
+  // Restore apiBase/tenantSlug from localStorage (form prefill) and session from cookies via /auth/me
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5224";
+    try {
+      const raw = localStorage.getItem(AUTH_KEY);
+      if (raw) {
+        const prefill = JSON.parse(raw) as StoredPrefill;
+        if (prefill.apiBase) { base = prefill.apiBase; setApiBase(prefill.apiBase); }
+        if (prefill.tenantSlug) setTenantSlug(prefill.tenantSlug);
+      }
+    } catch { /* ignore */ }
+    let cancelled = false;
+    base = base.trim() || base;
+    fetch(`${base}/auth/me`, { credentials: "include" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: AuthResponse | null) => {
+        if (cancelled || !data) return;
+        setUserFromAuth(data);
+        return fetch(`${base}/workspaces`, { credentials: "include" });
+      })
+      .then((res) => (res?.ok ? res.json() : null))
+      .then((data: Workspace[] | null) => {
+        if (cancelled) return;
+        if (Array.isArray(data)) {
+          setWorkspaces(data);
+          if (data.length > 0) setWorkspaceId((prev) => prev || data[0].id);
+        }
+      })
+      .catch(() => { /* ignore */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function refreshSession(): Promise<boolean> {
     try {
       const res = await fetch(`${apiBase}/auth/refresh`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken: refreshToken.trim() }),
+        body: JSON.stringify({}),
       });
       const data = await readResponseBody(res);
-      if (!res.ok || !data || typeof data !== "object" || !("accessToken" in data)) return null;
-      const auth = data as LoginResponse;
-      const newAccess = normalizeToken(auth.accessToken);
-      setToken(newAccess);
-      setRefreshToken(auth.refreshToken ?? "");
-      setRole(auth.role ?? "");
-      try {
-        const stored = localStorage.getItem("di_auth");
-        const parsed = stored ? JSON.parse(stored) : {};
-        localStorage.setItem(
-          "di_auth",
-          JSON.stringify({
-            ...parsed,
-            token: newAccess,
-            refreshToken: auth.refreshToken ?? parsed.refreshToken,
-            role: auth.role ?? parsed.role,
-          }),
-        );
-      } catch {
-        /* ignore */
-      }
-      return newAccess;
+      if (!res.ok || !data || typeof data !== "object" || !("role" in data)) return false;
+      setUserFromAuth(data as AuthResponse);
+      return true;
     } catch {
-      return null;
+      return false;
     }
   }
 
   async function fetchWithAuth(url: string, init?: RequestInit): Promise<Response> {
-    let jwt = normalizedToken;
-    let res = await fetch(url, { ...init, headers: { ...init?.headers, Authorization: `Bearer ${jwt}` } as HeadersInit });
-    if (res.status === 401 && refreshToken?.trim()) {
-      const newJwt = await refreshAndGetNewToken();
-      if (newJwt) res = await fetch(url, { ...init, headers: { ...init?.headers, Authorization: `Bearer ${newJwt}` } as HeadersInit });
+    let res = await fetch(url, { ...init, credentials: "include" });
+    if (res.status === 401) {
+      const ok = await refreshSession();
+      if (ok) res = await fetch(url, { ...init, credentials: "include" });
     }
     return res;
   }
 
-  async function loadWorkspaces(jwt: string) {
-    let res = await fetch(`${apiBase}/workspaces`, {
-      headers: { Authorization: `Bearer ${jwt}` },
-    });
+  async function loadWorkspaces() {
+    let res = await fetch(`${apiBase}/workspaces`, { credentials: "include" });
     if (res.status === 401) {
-      const newJwt = await refreshAndGetNewToken();
-      if (newJwt) res = await fetch(`${apiBase}/workspaces`, { headers: { Authorization: `Bearer ${newJwt}` } });
+      const ok = await refreshSession();
+      if (ok) res = await fetch(`${apiBase}/workspaces`, { credentials: "include" });
     }
     const body = await readResponseBody(res);
-    if (!res.ok) throw new Error(formatError(res.status, body));
+    if (!res.ok) {
+      const msg = res.status >= 500 ? "Server error loading workspaces. Try again." : formatError(res.status, body);
+      throw new Error(msg);
+    }
     const data = Array.isArray(body) ? (body as Workspace[]) : [];
     setWorkspaces(data);
     if (data.length > 0) setWorkspaceId((prev) => prev || data[0].id);
@@ -195,6 +205,7 @@ export default function Home() {
     try {
       const res = await fetch(`${apiBase}/auth/login`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           tenantSlug: tenantSlug.trim(),
@@ -203,39 +214,32 @@ export default function Home() {
         }),
       });
       const body = await readResponseBody(res);
-      if (!res.ok) {
-        throw new Error(formatError(res.status, body));
-      }
-
-      if (!body || typeof body !== "object" || !("accessToken" in body)) {
-        throw new Error("Unexpected login response format.");
-      }
-      const login = body as LoginResponse;
-      const jwt = normalizeToken(login.accessToken);
-      setToken(jwt);
-      setRefreshToken(login.refreshToken ?? "");
-      setRole(login.role ?? "");
+      if (!res.ok) throw new Error(formatError(res.status, body));
+      if (!body || typeof body !== "object" || !("role" in body))
+        throw new Error("Unexpected login response.");
+      const auth = body as AuthResponse;
+      setUserFromAuth(auth);
       try {
-        localStorage.setItem(
-          "di_auth",
-          JSON.stringify({
-            apiBase,
-            token: jwt,
-            refreshToken: login.refreshToken ?? "",
-            role: login.role ?? "",
-            email: login.email ?? email,
-          }),
-        );
-      } catch {
-        /* ignore */
-      }
-      await loadWorkspaces(jwt);
+        localStorage.setItem(AUTH_KEY, JSON.stringify({ apiBase, tenantSlug: tenantSlug.trim() } as StoredPrefill));
+      } catch { /* ignore */ }
+      await loadWorkspaces();
       setStatus("Login successful. Workspace loaded.");
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "Login failed.");
     } finally {
       setBusyLogin(false);
     }
+  }
+
+  async function handleLogout() {
+    try {
+      await fetch(`${apiBase}/auth/logout`, { method: "POST", credentials: "include" });
+    } catch { /* ignore */ }
+    setRole("");
+    setWorkspaces([]);
+    setWorkspaceId("");
+    // Keep email, tenantSlug, password so "Login" again works without re-typing
+    setStatus("Logged out.");
   }
 
   async function handleCreateWorkspace(e: FormEvent<HTMLFormElement>) {
@@ -260,7 +264,7 @@ export default function Home() {
       }
       setNewWorkspaceName("");
       setNewWorkspaceDescription("");
-      await loadWorkspaces(normalizedToken);
+      await loadWorkspaces();
       setStatus("Workspace created. List refreshed.");
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "Create workspace failed.");
@@ -276,7 +280,7 @@ export default function Home() {
     }
     setStatus("Refreshing workspaces...");
     try {
-      await loadWorkspaces(normalizedToken);
+      await loadWorkspaces();
       setStatus("Workspaces refreshed.");
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "Failed to refresh workspaces.");
@@ -381,14 +385,25 @@ export default function Home() {
     <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-4 p-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Document Intelligence Q&A</h1>
-        {canCreateWorkspace && (
-          <a
-            href="/admin"
-            className="rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm font-medium hover:bg-zinc-700"
-          >
-            Admin Dashboard
-          </a>
-        )}
+        <div className="flex items-center gap-2">
+          {canCreateWorkspace && (
+            <a
+              href="/admin"
+              className="rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm font-medium hover:bg-zinc-700"
+            >
+              Admin Dashboard
+            </a>
+          )}
+          {isLoggedIn && (
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="rounded border border-zinc-600 px-3 py-2 text-sm hover:bg-zinc-800"
+            >
+              Logout
+            </button>
+          )}
+        </div>
       </div>
 
       <section className="grid gap-3 rounded border border-zinc-700 p-4 md:grid-cols-3">
@@ -455,7 +470,7 @@ export default function Home() {
         </form>
         {isLoggedIn && (
           <p className="mt-2 text-xs text-zinc-400">
-            Logged in as {email} ({role}). Token managed internally.
+            Logged in as {email} ({role}). Session in secure cookies.
           </p>
         )}
       </section>

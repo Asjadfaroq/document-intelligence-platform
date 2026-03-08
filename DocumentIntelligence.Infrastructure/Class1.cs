@@ -1,18 +1,20 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Channels;
 using DocumentIntelligence.Application;
 using DocumentIntelligence.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
-using Pgvector;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
+using Pgvector;
+using StackExchange.Redis;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using UglyToad.PdfPig;
@@ -322,6 +324,76 @@ public class RefreshTokenStore : IRefreshTokenStore
             .ToListAsync(cancellationToken);
         _db.RefreshTokens.RemoveRange(existing);
         await _db.SaveChangesAsync(cancellationToken);
+    }
+}
+
+/// <summary>Refresh tokens in Redis for fast lookup and immediate revocation. Use when Redis is configured.</summary>
+public sealed class RedisRefreshTokenStore : IRefreshTokenStore
+{
+    private const string KeyPrefix = "refresh:";
+    private readonly IConnectionMultiplexer _redis;
+    private readonly ApplicationDbContext _db;
+    private readonly IConfiguration _configuration;
+
+    public RedisRefreshTokenStore(IConnectionMultiplexer redis, ApplicationDbContext db, IConfiguration configuration)
+    {
+        _redis = redis;
+        _db = db;
+        _configuration = configuration;
+    }
+
+    private static string HashToken(string token)
+    {
+        var bytes = Encoding.UTF8.GetBytes(token);
+        var hash = SHA256.HashData(bytes);
+        return Convert.ToHexString(hash);
+    }
+
+    private int GetRefreshTokenExpirationDays()
+    {
+        var config = _configuration["Jwt:RefreshTokenExpirationDays"] ?? _configuration["Jwt__RefreshTokenExpirationDays"];
+        if (!string.IsNullOrWhiteSpace(config) && int.TryParse(config, out var days) && days > 0)
+            return Math.Min(days, 30);
+        return 7;
+    }
+
+    public Task<(string Token, DateTime ExpiresAtUtc)> CreateAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var bytes = new byte[48];
+        RandomNumberGenerator.Fill(bytes);
+        var token = Convert.ToBase64String(bytes).Replace("+", "-").Replace("/", "_").TrimEnd('=');
+        var hash = HashToken(token);
+        var days = GetRefreshTokenExpirationDays();
+        var expiresAt = DateTime.UtcNow.AddDays(days);
+        var ttl = TimeSpan.FromDays(days);
+        var key = KeyPrefix + hash;
+        var redisDb = _redis.GetDatabase();
+        redisDb.StringSet(key, userId.ToString(), ttl, when: When.Always);
+        return Task.FromResult((token, expiresAt));
+    }
+
+    public async Task<User?> GetUserByTokenAsync(string token, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(token)) return null;
+        var hash = HashToken(token);
+        var key = KeyPrefix + hash;
+        var redisDb = _redis.GetDatabase();
+        var userIdStr = await redisDb.StringGetAsync(key);
+        if (userIdStr.IsNullOrEmpty || !Guid.TryParse(userIdStr.ToString(), out var userId))
+            return null;
+        var user = await _db.Users
+            .Include(u => u.Tenant)
+            .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+        return user;
+    }
+
+    public Task RevokeAsync(string token, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(token)) return Task.CompletedTask;
+        var hash = HashToken(token);
+        var key = KeyPrefix + hash;
+        var redisDb = _redis.GetDatabase();
+        return redisDb.KeyDeleteAsync(key);
     }
 }
 
@@ -637,6 +709,84 @@ public sealed class InMemoryCacheService : ICacheService
     {
         _cache.Remove(key);
         return Task.CompletedTask;
+    }
+}
+
+/// <summary>Redis-backed cache for workspace and document lists. Use when ConnectionStrings:Redis is set.</summary>
+public sealed class RedisCacheService : ICacheService
+{
+    private readonly IDatabase _db;
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
+    public RedisCacheService(IConnectionMultiplexer redis)
+    {
+        _db = redis.GetDatabase();
+    }
+
+    public async Task<T> GetOrSetAsync<T>(string key, TimeSpan ttl, Func<CancellationToken, Task<T>> factory, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var raw = await _db.StringGetAsync(key);
+            if (raw.HasValue && !raw.IsNullOrEmpty)
+            {
+                var json = raw.ToString();
+                if (!string.IsNullOrEmpty(json))
+                {
+                    var cached = JsonSerializer.Deserialize<T>(json, JsonOptions);
+                    if (cached is not null)
+                        return cached;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Deserialization or Redis read failed; treat as cache miss and run factory
+        }
+
+        var value = await factory(cancellationToken);
+        try
+        {
+            var serialized = JsonSerializer.Serialize(value, JsonOptions);
+            await _db.StringSetAsync(key, serialized, ttl, when: When.Always);
+        }
+        catch (Exception)
+        {
+            // Cache write failed; return value anyway
+        }
+        return value;
+    }
+
+    public Task InvalidateAsync(string key, CancellationToken cancellationToken = default)
+    {
+        return _db.KeyDeleteAsync(key);
+    }
+}
+
+public sealed class NoOpRateLimitService : IRateLimitService
+{
+    public Task<bool> AllowAsync(string scope, string key, int limit, int windowSeconds, CancellationToken cancellationToken = default) => Task.FromResult(true);
+}
+
+public sealed class RedisRateLimitService : IRateLimitService
+{
+    private const string KeyPrefix = "ratelimit:";
+    private readonly IConnectionMultiplexer _redis;
+
+    public RedisRateLimitService(IConnectionMultiplexer redis) => _redis = redis;
+
+    public async Task<bool> AllowAsync(string scope, string key, int limit, int windowSeconds, CancellationToken cancellationToken = default)
+    {
+        var rkey = $"{KeyPrefix}{scope}:{key}";
+        var db = _redis.GetDatabase();
+        var count = (long)await db.StringIncrementAsync(rkey);
+        if (count == 1)
+            await db.KeyExpireAsync(rkey, TimeSpan.FromSeconds(windowSeconds));
+        return count <= limit;
     }
 }
 
