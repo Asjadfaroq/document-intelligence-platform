@@ -97,6 +97,7 @@ export default function Home() {
   const [busyAsk, setBusyAsk] = useState(false);
   const [showCreateWorkspaceModal, setShowCreateWorkspaceModal] = useState(false);
   const [uploadHistory, setUploadHistory] = useState<string[]>([]);
+  const [uploadJustSucceeded, setUploadJustSucceeded] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [streamingChatId, setStreamingChatId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -294,7 +295,7 @@ export default function Home() {
 
   async function handleUpload(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!canCallApi || !uploadFile) {
+    if (!canCallApi || !uploadFile || busyUpload) {
       const msg =
         locale === "ar"
           ? "سجل الدخول واختر مساحة عمل ثم ملف PDF أولاً."
@@ -339,6 +340,11 @@ export default function Home() {
       setUploadHistory((prev) =>
         uploadFile ? [uploadFile.name, ...prev].slice(0, 10) : prev,
       );
+      setUploadFile(null);
+      const fileInput = document.getElementById("pdf-upload-input") as HTMLInputElement | null;
+      if (fileInput) fileInput.value = "";
+      setUploadJustSucceeded(true);
+      setTimeout(() => setUploadJustSucceeded(false), 3500);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Upload failed.";
       setStatus(msg);
@@ -625,13 +631,34 @@ export default function Home() {
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
               />
-              <button
+              <motion.button
                 type="submit"
                 disabled={busyUpload || !uploadFile}
-                className="ml-auto rounded-lg bg-indigo-600/80 px-2.5 py-1.5 text-[11px] font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+                animate={uploadJustSucceeded ? { scale: [1, 1.05, 1] } : {}}
+                transition={{ duration: 0.3 }}
+                className={`ml-auto flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-white transition-all duration-300 ${
+                  uploadJustSucceeded
+                    ? "bg-emerald-500 shadow-md shadow-emerald-500/30"
+                    : "bg-indigo-600/80 hover:bg-indigo-500 disabled:opacity-50"
+                }`}
               >
-                {busyUpload ? "…" : locale === "ar" ? "رفع" : "Upload"}
-              </button>
+                {busyUpload ? (
+                  "…"
+                ) : uploadJustSucceeded ? (
+                  <>
+                    <motion.span
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: "spring", stiffness: 500, damping: 25 }}
+                    >
+                      ✓
+                    </motion.span>
+                    {locale === "ar" ? "تم الإرسال" : "Submitted"}
+                  </>
+                ) : (
+                  locale === "ar" ? "رفع" : "Upload"
+                )}
+              </motion.button>
             </form>
 
             {busyUpload && (
