@@ -11,7 +11,8 @@ public static class AskEndpoints
     public static IEndpointRouteBuilder MapAsk(this IEndpointRouteBuilder routes)
     {
         var group = routes.MapGroup("/workspaces/{workspaceId:guid}/ask")
-            .RequireAuthorization("TenantUser");
+            .RequireAuthorization("TenantUser")
+            .RequireRateLimiting("ask-rl");
 
         group.MapPost(string.Empty, async (
             Guid workspaceId,

@@ -1,10 +1,13 @@
 using System.Linq;
 using System.Text;
+using System.Security.Claims;
+using System.Threading.RateLimiting;
 using DocumentIntelligence.Application;
 using DocumentIntelligence.Infrastructure;
 using DocumentIntelligence.Api;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 
@@ -79,6 +82,47 @@ builder.Services.AddAuthorization(options =>
         policy.RequireRole("Owner", "Admin"));
     options.AddPolicy("TenantUser", policy =>
         policy.RequireRole("Owner", "Admin", "Member"));
+});
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // Login: 5 attempts per minute per IP
+    options.AddPolicy("login-rl", httpContext =>
+    {
+        var clientIp = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: clientIp,
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 0
+            });
+    });
+
+    // Ask: 3 requests per 30 seconds per user/tenant (fallback to IP)
+    options.AddPolicy("ask-rl", httpContext =>
+    {
+        var tenantId = httpContext.User.FindFirst("tenantId")?.Value;
+        var userId = httpContext.User.FindFirst("sub")?.Value
+                     ?? httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var baseKey = tenantId != null && userId != null
+            ? $"{tenantId}:{userId}"
+            : httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: baseKey,
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 3,
+                Window = TimeSpan.FromSeconds(30),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 0
+            });
+    });
 });
 
 var connectionString = builder.Configuration.GetConnectionString("Default");
@@ -167,6 +211,7 @@ app.UseCors("WebClient");
 if (hasJwtAuth)
     app.UseAuthentication();
 app.UseHttpsRedirection();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
