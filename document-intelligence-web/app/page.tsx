@@ -455,8 +455,8 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-[#050816] via-black to-black text-zinc-50" dir={dir}>
-      <div className="flex min-h-screen w-full">
+    <main className="h-screen bg-gradient-to-b from-[#050816] via-black to-black text-zinc-50" dir={dir}>
+      <div className="flex h-screen w-full overflow-hidden">
         {/* Sidebar */}
         <aside className="hidden w-72 flex-col border-r border-zinc-900/80 bg-zinc-950/80 p-4 backdrop-blur md:flex">
           <div className="mb-6">
