@@ -107,7 +107,8 @@ builder.Services.AddMediatR(cfg =>
 });
 
 var jwtSecret = builder.Configuration["Jwt:Secret"] ?? builder.Configuration["Jwt__Secret"];
-if (!string.IsNullOrWhiteSpace(jwtSecret))
+var hasJwtAuth = !string.IsNullOrWhiteSpace(jwtSecret);
+if (hasJwtAuth)
 {
     var key = Encoding.UTF8.GetBytes(jwtSecret);
 
@@ -163,7 +164,8 @@ app.UseSerilogRequestLogging(options =>
     };
 });
 app.UseCors("WebClient");
-app.UseAuthentication();
+if (hasJwtAuth)
+    app.UseAuthentication();
 app.UseHttpsRedirection();
 app.UseAuthorization();
 

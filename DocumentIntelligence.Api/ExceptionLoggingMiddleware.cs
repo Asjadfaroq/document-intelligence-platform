@@ -41,7 +41,8 @@ public sealed class ExceptionLoggingMiddleware
                     type = "https://tools.ietf.org/html/rfc7231#section-6.6.1",
                     title = "An error occurred",
                     status = 500,
-                    correlationId
+                    correlationId,
+                    detail = ex.ToString()
                 });
             }
             else
