@@ -43,6 +43,27 @@ public static class AuthEndpoints
     private const int AccessTokenMaxAgeSeconds = 15 * 60;
     private const int RefreshTokenMaxAgeSeconds = 7 * 24 * 3600;
 
+    private static bool IsPasswordStrong(string password, out string error)
+    {
+        error = string.Empty;
+        if (string.IsNullOrWhiteSpace(password) || password.Length < 8)
+        {
+            error = "Password must be at least 8 characters long.";
+            return false;
+        }
+
+        var hasLetter = password.Any(char.IsLetter);
+        var hasDigit = password.Any(char.IsDigit);
+
+        if (!hasLetter || !hasDigit)
+        {
+            error = "Password must contain at least one letter and one number.";
+            return false;
+        }
+
+        return true;
+    }
+
     private static string Slugify(string input)
     {
         if (string.IsNullOrWhiteSpace(input))
@@ -120,14 +141,27 @@ public static class AuthEndpoints
             HttpContext ctx,
             IMediator mediator,
             IApplicationDbContext db,
+            IRateLimitService rateLimit,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
             var log = loggerFactory.CreateLogger(LogCategory);
+            var clientKey = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            if (!await rateLimit.AllowAsync("signup", clientKey, 5, 60, ct))
+            {
+                log.LogWarning("Signup rate limited: Key={Key}", clientKey);
+                return Results.Json(new { title = "Too many signup attempts. Try again in a minute.", status = 429 }, statusCode: 429);
+            }
+
             var email = request.Email.Trim().ToLowerInvariant();
             if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(request.Password))
             {
                 return Results.BadRequest(new { title = "Email and password are required." });
+            }
+
+            if (!IsPasswordStrong(request.Password, out var pwdError))
+            {
+                return Results.BadRequest(new { title = pwdError, status = 400 });
             }
 
             var localPart = email.Split('@')[0];
@@ -330,10 +364,22 @@ public static class AuthEndpoints
             AcceptInviteRequest request,
             HttpContext ctx,
             IMediator mediator,
+            IRateLimitService rateLimit,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
             var log = loggerFactory.CreateLogger(LogCategory);
+            var clientKey = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            if (!await rateLimit.AllowAsync("accept-invite", clientKey, 5, 60, ct))
+            {
+                log.LogWarning("Accept invite rate limited: Key={Key}", clientKey);
+                return Results.Json(new { title = "Too many attempts. Try again in a minute.", status = 429 }, statusCode: 429);
+            }
+
+            if (!IsPasswordStrong(request.Password, out var pwdError))
+            {
+                return Results.BadRequest(new { title = pwdError, status = 400 });
+            }
             try
             {
                 var command = new AcceptInviteCommand(request.Code, request.Password);

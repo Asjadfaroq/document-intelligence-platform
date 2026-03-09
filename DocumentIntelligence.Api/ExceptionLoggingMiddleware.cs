@@ -9,11 +9,16 @@ public sealed class ExceptionLoggingMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly ILogger<ExceptionLoggingMiddleware> _logger;
+    private readonly IHostEnvironment _environment;
 
-    public ExceptionLoggingMiddleware(RequestDelegate next, ILogger<ExceptionLoggingMiddleware> logger)
+    public ExceptionLoggingMiddleware(
+        RequestDelegate next,
+        ILogger<ExceptionLoggingMiddleware> logger,
+        IHostEnvironment environment)
     {
         _next = next;
         _logger = logger;
+        _environment = environment;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -36,14 +41,28 @@ public sealed class ExceptionLoggingMiddleware
             if (!context.Response.HasStarted)
             {
                 context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-                await context.Response.WriteAsJsonAsync(new
+
+                if (_environment.IsDevelopment())
                 {
-                    type = "https://tools.ietf.org/html/rfc7231#section-6.6.1",
-                    title = "An error occurred",
-                    status = 500,
-                    correlationId,
-                    detail = ex.ToString()
-                });
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        type = "https://tools.ietf.org/html/rfc7231#section-6.6.1",
+                        title = "An error occurred",
+                        status = 500,
+                        correlationId,
+                        detail = ex.ToString()
+                    });
+                }
+                else
+                {
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        type = "https://tools.ietf.org/html/rfc7231#section-6.6.1",
+                        title = "An error occurred",
+                        status = 500,
+                        correlationId
+                    });
+                }
             }
             else
             {
