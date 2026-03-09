@@ -779,7 +779,7 @@ export default function Home() {
                             <>
                               <button
                                 type="button"
-                                className="rounded px-1.5 py-0.5 hover:bg-zinc-700/50 hover:text-zinc-200"
+                                className="rounded px-1.5 py-0.5 text-[10px] text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-200"
                                 onClick={() => handleCopyAnswer(item.answer)}
                                 title={locale === "ar" ? "نسخ" : "Copy"}
                               >
@@ -787,7 +787,7 @@ export default function Home() {
                               </button>
                               <button
                                 type="button"
-                                className="rounded px-1.5 py-0.5 hover:bg-zinc-700/50 hover:text-zinc-200"
+                                className="rounded px-1.5 py-0.5 text-[10px] text-zinc-500 hover:bg-zinc-700/50 hover:text-indigo-300"
                                 onClick={() => handleRegenerate(item)}
                                 title={locale === "ar" ? "إعادة توليد" : "Regenerate"}
                               >

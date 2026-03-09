@@ -12,6 +12,20 @@ type SourceLike = {
   storagePath?: string;
 };
 
+/** Renders text with **bold** segments. */
+function renderWithBold(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) =>
+    part.startsWith("**") && part.endsWith("**") ? (
+      <strong key={i} className="font-semibold text-zinc-50">
+        {part.slice(2, -2)}
+      </strong>
+    ) : (
+      part
+    ),
+  );
+}
+
 export function ChatMessageBubble({
   role,
   content,
@@ -78,23 +92,23 @@ export function ChatMessageBubble({
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.2, ease: "easeOut" }}
-        className={`max-w-[85%] rounded-xl px-3 py-2.5 text-sm shadow-lg ${
+        className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${
           isUser
-            ? "bg-indigo-500/95 text-white shadow-indigo-900/30"
-            : "bg-zinc-800/70 text-zinc-100 shadow-black/20 backdrop-blur-sm border border-zinc-700/30"
+            ? "bg-indigo-500/95 text-white shadow-md"
+            : "bg-zinc-800/70 text-zinc-100 border border-zinc-700/30 backdrop-blur-sm"
         } ${rtl ? "text-right" : "text-left"}`}
       >
         <div className="mb-1 flex items-center justify-between gap-2 text-[10px] text-zinc-400">
           <span>{isUser ? (locale === "ar" ? "أنت" : "You") : (locale === "ar" ? "المساعد" : "Assistant")}</span>
-          <span>{timeStr}</span>
+          <span className="tabular-nums">{timeStr}</span>
         </div>
         <div className="whitespace-pre-wrap text-[13px] leading-relaxed">
-          {displayedContent}
+          {isUser ? displayedContent : renderWithBold(displayedContent)}
           {streaming && (
-            <span className="ml-1 inline-flex">
-              <span className="mx-0.5 h-1 w-1 animate-pulse rounded-full bg-zinc-400" />
-              <span className="mx-0.5 h-1 w-1 animate-pulse rounded-full bg-zinc-500 [animation-delay:150ms]" />
-              <span className="mx-0.5 h-1 w-1 animate-pulse rounded-full bg-zinc-600 [animation-delay:300ms]" />
+            <span className="ml-1 inline-flex gap-0.5">
+              <span className="h-1 w-1 animate-pulse rounded-full bg-zinc-400" />
+              <span className="h-1 w-1 animate-pulse rounded-full bg-zinc-500 [animation-delay:100ms]" />
+              <span className="h-1 w-1 animate-pulse rounded-full bg-zinc-600 [animation-delay:200ms]" />
             </span>
           )}
         </div>
@@ -102,7 +116,7 @@ export function ChatMessageBubble({
           <ExpandableSources sources={sources} locale={locale} rtl={rtl} />
         )}
         {actions && (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-zinc-700/40 pt-1.5 text-[10px] text-zinc-500 opacity-70 transition-opacity group-hover:opacity-100">
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-zinc-600/30 pt-1.5">
             {actions}
           </div>
         )}
@@ -123,16 +137,16 @@ function ExpandableSources({
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="mt-1.5">
+    <div className="mt-2">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`flex w-full items-center justify-between rounded px-1.5 py-0.5 text-[10px] text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-400 ${
-          rtl ? "text-right" : "text-left"
+        className={`flex w-full items-center justify-between gap-1.5 rounded px-1.5 py-1 text-[10px] text-zinc-500 hover:bg-zinc-700/40 hover:text-zinc-400 ${
+          rtl ? "flex-row-reverse text-right" : "text-left"
         }`}
       >
         <span>{locale === "ar" ? "المصادر" : "Sources"} ({sources.length})</span>
-        <span>{open ? "−" : "+"}</span>
+        <span className={`transition-transform ${open ? "rotate-180" : ""}`}>{open ? "−" : "+"}</span>
       </button>
       {open && (
         <div className="mt-1 space-y-1">
