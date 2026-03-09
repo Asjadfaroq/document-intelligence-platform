@@ -1118,38 +1118,27 @@ function ThinkingSteps({ locale }: { locale: "en" | "ar" }) {
 
   return (
     <div className="flex items-center gap-2.5">
-      {/* Radar sweep - compact scan indicator */}
-      <svg
-        className="h-4 w-4 shrink-0 text-indigo-400/90"
-        viewBox="0 0 16 16"
-        fill="none"
-      >
-        <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" opacity="0.3" />
-        <circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1" opacity="0.2" />
-        <path
-          d="M8 2 L8 8 L12 8"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          className="origin-[8px_8px] animate-radar-sweep"
-        />
-      </svg>
-      {/* Data stream bars - subtle processing indicator */}
-      <div className="flex items-end gap-0.5">
-        {[0, 1, 2, 3, 4].map((i) => (
-          <motion.span
-            key={i}
-            className="w-0.5 rounded-full bg-indigo-500/70"
-            animate={{
-              height: [4, 10, 4],
-            }}
-            transition={{
-              duration: 0.8,
-              repeat: Infinity,
-              delay: i * 0.15,
-            }}
+      {/* AI sparkle icon (Lottie-style: four-pointed star + plus) */}
+      <div className="ai-sparkle-glow flex h-5 w-5 shrink-0 items-center justify-center">
+        <svg
+          className="ai-sparkle-icon h-[18px] w-[18px] text-indigo-400"
+          viewBox="0 0 24 24"
+        >
+          {/* Four-pointed star */}
+          <path
+            d="M12 2l2.5 7.5H22l-6 4.5 2.5 7.5L12 16l-6.5 5.5 2.5-7.5-6-4.5h7.5L12 2z"
+            fill="currentColor"
           />
-        ))}
+          {/* Plus in center */}
+          <path
+            d="M12 9v6M9 12h6"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            strokeLinecap="round"
+            fill="none"
+            opacity="0.85"
+          />
+        </svg>
       </div>
       {/* Active step text */}
       <motion.span

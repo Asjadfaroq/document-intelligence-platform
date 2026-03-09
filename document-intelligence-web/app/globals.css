@@ -55,12 +55,26 @@ body {
   box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.3), 0 0 24px -4px rgba(99, 102, 241, 0.15);
 }
 
-/* AI search radar sweep */
-@keyframes radar-sweep {
+/* AI search sparkle (Lottie-style) */
+@keyframes ai-sparkle-pulse {
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
+@keyframes ai-sparkle-glow {
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(99, 102, 241, 0.4)); }
+  50% { filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.7)); }
+}
+
+@keyframes ai-sparkle-rotate {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
 
-.animate-radar-sweep {
-  animation: radar-sweep 2s linear infinite;
+.ai-sparkle-icon {
+  animation: ai-sparkle-pulse 1.8s ease-in-out infinite;
+}
+
+.ai-sparkle-glow {
+  animation: ai-sparkle-glow 1.8s ease-in-out infinite;
 }
