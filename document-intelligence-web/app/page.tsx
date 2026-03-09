@@ -112,6 +112,7 @@ export default function Home() {
   const [uploadJustSucceeded, setUploadJustSucceeded] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [documents, setDocuments] = useState<DocumentInWorkspace[]>([]);
+  const [documentsExpanded, setDocumentsExpanded] = useState(false);
   const [deleteDocumentId, setDeleteDocumentId] = useState<string | null>(null);
   const [streamingChatId, setStreamingChatId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -707,6 +708,24 @@ export default function Home() {
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
               />
+              {workspaceId && documents.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setDocumentsExpanded((v) => !v)}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-700/50 hover:text-zinc-300"
+                  title={documentsExpanded ? (locale === "ar" ? "طي المستندات" : "Collapse documents") : (locale === "ar" ? "عرض المستندات" : "Show documents")}
+                  aria-label={documentsExpanded ? "Collapse documents" : "Expand documents"}
+                >
+                  <svg
+                    className={`h-4 w-4 transition-transform ${documentsExpanded ? "rotate-180" : ""}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+              )}
               <motion.button
                 type="submit"
                 disabled={busyUpload || !uploadFile}
@@ -743,8 +762,8 @@ export default function Home() {
               </div>
             )}
 
-            {/* Documents in workspace */}
-            {workspaceId && documents.length > 0 && (
+            {/* Documents in workspace (collapsible, folded by default) */}
+            {workspaceId && documents.length > 0 && documentsExpanded && (
               <div className="border-b border-zinc-700/30 px-3 py-2">
                 <p className="mb-1.5 text-[10px] font-medium text-zinc-500">
                   {locale === "ar" ? "مستندات في المساحة" : "Documents in workspace"}
