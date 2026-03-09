@@ -13,6 +13,10 @@ import {
   ResponsiveContainer,
   LineChart,
   Line,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
 } from "recharts";
 import { getApiBase, readResponseBody, formatError, AuthResponse } from "../lib/api";
 import { useToast } from "../components/ToastProvider";
@@ -45,11 +49,53 @@ type TenantOverview = {
   topDocumentsByUsage?: TopDocumentUsage[];
 };
 
-const CHART_HEIGHT = 280;
+const CHART_HEIGHT = 140;
+const TOP_DOCS_MAX_HEIGHT = 120;
+const PIE_COLORS = [
+  "rgb(99, 102, 241)",  // indigo
+  "rgb(34, 197, 94)",   // emerald
+  "rgb(249, 115, 22)",  // orange
+  "rgb(236, 72, 153)",  // pink
+  "rgb(14, 165, 233)",  // sky
+  "rgb(168, 85, 247)",  // violet
+  "rgb(234, 179, 8)",   // amber
+  "rgb(20, 184, 166)",  // teal
+];
 const GRID_COLOR = "rgba(113, 113, 122, 0.3)";
 const AXIS_COLOR = "rgb(161, 161, 170)";
-const TOOLTIP_BG = "rgb(24, 24, 27)";
-const TOOLTIP_BORDER = "rgba(113, 113, 122, 0.5)";
+
+/** Custom tooltip for charts – professional, polished style */
+function ChartTooltip({
+  active,
+  payload,
+  label,
+  valueLabel = "Value",
+  valueFormatter = (v: number) => v.toString(),
+}: {
+  active?: boolean;
+  payload?: Array<{ value: number; name: string }>;
+  label?: string;
+  valueLabel?: string;
+  valueFormatter?: (v: number) => string;
+}) {
+  if (!active || !payload?.length) return null;
+  const value = payload[0].value;
+  return (
+    <div className="pointer-events-none rounded-xl border border-zinc-600/60 bg-zinc-900/98 px-4 py-3 shadow-2xl shadow-black/50 backdrop-blur-md ring-1 ring-white/5">
+      {label && (
+        <p className="mb-1.5 truncate max-w-[220px] text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+          {label}
+        </p>
+      )}
+      <div className="flex items-baseline gap-2">
+        <span className="text-xs text-zinc-500">{valueLabel}</span>
+        <span className="text-base font-bold tabular-nums text-indigo-300">
+          {valueFormatter(value)}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 export default function AdminPage() {
   const { showToast } = useToast();
@@ -192,6 +238,12 @@ export default function AdminPage() {
   const questionsChartData = (overview.questionsPerDay ?? []).map((q) => questionsPerDayMap(q));
   const docsByWorkspaceData = (overview.docCountPerWorkspace ?? []).map((d) => docPerWorkspaceMap(d));
   const topDocsData = (overview.topDocumentsByUsage ?? []).map((d) => topDocMap(d));
+  const totalCitations = topDocsData.reduce((s, d) => s + d.usage, 0);
+  const citationShareData = topDocsData.map((d) => ({
+    name: d.name,
+    value: d.usage,
+    pct: totalCitations > 0 ? Math.round((d.usage / totalCitations) * 100) : 0,
+  }));
 
   const kpis = [
     { label: "Documents", value: overview.totalDocuments ?? 0, isNumber: true },
@@ -205,8 +257,8 @@ export default function AdminPage() {
   ];
 
   return (
-    <main className="app-dark-bg app-grid min-h-screen text-zinc-50">
-      <div className="flex min-h-screen w-full">
+    <main className="app-dark-bg app-grid h-screen overflow-hidden text-zinc-50">
+      <div className="flex h-full w-full min-h-0">
         {/* Sidebar */}
         <aside className="glass-surface hidden w-56 flex-shrink-0 flex-col border-r border-zinc-800/40 p-3 md:flex">
           <h1 className="mb-4 text-sm font-semibold tracking-tight text-zinc-100">
@@ -231,18 +283,18 @@ export default function AdminPage() {
           </div>
         </aside>
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-6">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3 md:p-4">
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3 }}
-            className="mb-6 flex flex-wrap items-center justify-between gap-4"
+            className="mb-2 flex flex-shrink-0 flex-wrap items-center justify-between gap-2"
           >
             <div>
-              <h1 className="text-xl font-semibold tracking-tight text-zinc-100">
+              <h1 className="text-base font-semibold tracking-tight text-zinc-100">
                 Analytics
               </h1>
-              <p className="mt-1 text-sm text-zinc-500">
+              <p className="text-[11px] text-zinc-500">
                 Tenant overview and usage metrics
               </p>
             </div>
@@ -255,19 +307,19 @@ export default function AdminPage() {
           </motion.div>
 
           {/* KPI cards */}
-          <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mb-2 grid flex-shrink-0 gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {kpis.map((kpi, i) => (
               <motion.div
                 key={kpi.label}
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.25, delay: i * 0.05 }}
-                className="glass-surface rounded-xl border border-zinc-800/40 p-4 shadow-lg"
+                className="glass-surface rounded-xl border border-zinc-800/40 p-3 shadow-lg"
               >
-                <p className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
                   {kpi.label}
                 </p>
-                <p className="mt-1 text-2xl font-semibold tabular-nums text-zinc-100">
+                <p className="mt-0.5 text-lg font-semibold tabular-nums text-zinc-100">
                   {kpi.isNumber ? (kpi.value as number).toLocaleString() : kpi.value}
                 </p>
               </motion.div>
@@ -275,15 +327,15 @@ export default function AdminPage() {
           </div>
 
           {/* Charts grid */}
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid min-h-0 flex-1 gap-2 lg:grid-cols-2">
             {questionsChartData.length > 0 && (
               <motion.section
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3, delay: 0.1 }}
-                className="glass-surface rounded-xl border border-zinc-800/40 p-4 shadow-lg"
+                className="glass-surface flex min-h-0 flex-col rounded-xl border border-zinc-800/40 p-2 shadow-lg"
               >
-                <h2 className="mb-4 text-sm font-semibold text-zinc-200">
+                <h2 className="mb-1 flex-shrink-0 text-sm font-semibold text-zinc-200">
                   Questions per day
                 </h2>
                 <div style={{ height: CHART_HEIGHT }} className="w-full">
@@ -293,15 +345,15 @@ export default function AdminPage() {
                       <XAxis dataKey="date" stroke={AXIS_COLOR} fontSize={11} tickLine={false} axisLine={false} />
                       <YAxis stroke={AXIS_COLOR} fontSize={11} tickLine={false} axisLine={false} width={32} />
                       <Tooltip
-                        contentStyle={{
-                          backgroundColor: TOOLTIP_BG,
-                          border: `1px solid ${TOOLTIP_BORDER}`,
-                          borderRadius: "8px",
-                          fontSize: "12px",
-                        }}
-                        labelStyle={{ color: AXIS_COLOR }}
-                        formatter={(value: number) => [value, "Questions"]}
-                        labelFormatter={(label) => `Date: ${label}`}
+                        content={({ active, payload, label }) => (
+                          <ChartTooltip
+                            active={active}
+                            payload={payload}
+                            label={label ? `Date: ${label}` : undefined}
+                            valueLabel="Questions"
+                          />
+                        )}
+                        cursor={{ stroke: GRID_COLOR, strokeWidth: 1 }}
                       />
                       <Line
                         type="monotone"
@@ -322,9 +374,9 @@ export default function AdminPage() {
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3, delay: 0.15 }}
-                className="glass-surface rounded-xl border border-zinc-800/40 p-4 shadow-lg"
+                className="glass-surface flex min-h-0 flex-col rounded-xl border border-zinc-800/40 p-2 shadow-lg"
               >
-                <h2 className="mb-4 text-sm font-semibold text-zinc-200">
+                <h2 className="mb-1 flex-shrink-0 text-sm font-semibold text-zinc-200">
                   Documents per workspace
                 </h2>
                 <div style={{ height: CHART_HEIGHT }} className="w-full">
@@ -334,13 +386,15 @@ export default function AdminPage() {
                       <XAxis dataKey="name" stroke={AXIS_COLOR} fontSize={11} tickLine={false} axisLine={false} />
                       <YAxis stroke={AXIS_COLOR} fontSize={11} tickLine={false} axisLine={false} width={32} />
                       <Tooltip
-                        contentStyle={{
-                          backgroundColor: TOOLTIP_BG,
-                          border: `1px solid ${TOOLTIP_BORDER}`,
-                          borderRadius: "8px",
-                          fontSize: "12px",
-                        }}
-                        formatter={(value: number) => [value, "Documents"]}
+                        content={({ active, payload, label }) => (
+                          <ChartTooltip
+                            active={active}
+                            payload={payload}
+                            label={label ? `Workspace: ${label}` : undefined}
+                            valueLabel="Documents"
+                          />
+                        )}
+                        cursor={{ stroke: GRID_COLOR, strokeWidth: 1 }}
                       />
                       <Bar
                         dataKey="documents"
@@ -353,6 +407,105 @@ export default function AdminPage() {
                 </div>
               </motion.section>
             )}
+
+            {citationShareData.length > 0 && (
+              <motion.section
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.18 }}
+                className="glass-surface flex min-h-0 flex-col rounded-xl border border-zinc-800/40 p-2 shadow-lg"
+              >
+                <h2 className="mb-1 flex-shrink-0 text-sm font-semibold text-zinc-200">
+                  Citation share
+                </h2>
+                <div style={{ height: CHART_HEIGHT }} className="w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
+                      <Pie
+                        data={citationShareData}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={40}
+                        outerRadius={56}
+                        paddingAngle={2}
+                        stroke="transparent"
+                      >
+                        {citationShareData.map((_, i) => (
+                          <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        content={({ active, payload }) => {
+                          if (!active || !payload?.length) return null;
+                          const d = payload[0].payload;
+                          return (
+                            <div className="pointer-events-none rounded-xl border border-zinc-600/60 bg-zinc-900/98 px-4 py-3 shadow-2xl shadow-black/50 backdrop-blur-md ring-1 ring-white/5">
+                              <p className="mb-1.5 truncate max-w-[200px] text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                                {d.name}
+                              </p>
+                              <div className="flex items-baseline gap-2">
+                                <span className="text-xs text-zinc-500">Citations</span>
+                                <span className="text-base font-bold tabular-nums text-indigo-300">
+                                  {d.value} ({d.pct}%)
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        }}
+                      />
+                      {citationShareData.length <= 6 && (
+                        <Legend
+                          layout="horizontal"
+                          align="center"
+                          verticalAlign="bottom"
+                          formatter={(value) => (
+                            <span className="text-[10px] text-zinc-500">
+                              {value.length > 16 ? value.slice(0, 16) + "…" : value}
+                            </span>
+                          )}
+                          wrapperStyle={{ fontSize: 10 }}
+                          iconSize={6}
+                          iconType="circle"
+                        />
+                      )}
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </motion.section>
+            )}
+
+            {/* Usage summary - fills space next to Citation share */}
+            <motion.section
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.2 }}
+              className="glass-surface flex min-h-0 flex-col justify-center rounded-xl border border-zinc-800/40 p-3 shadow-lg"
+            >
+              <h2 className="mb-3 flex-shrink-0 text-sm font-semibold text-zinc-200">
+                Usage summary
+              </h2>
+              <div className="space-y-2.5 text-xs">
+                <div className="flex justify-between gap-2">
+                  <span className="text-zinc-500">Total citations</span>
+                  <span className="font-semibold tabular-nums text-zinc-100">{totalCitations}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-zinc-500">Documents tracked</span>
+                  <span className="font-semibold tabular-nums text-zinc-100">{topDocsData.length}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-zinc-500">Docs per user</span>
+                  <span className="font-semibold tabular-nums text-zinc-100">
+                    {(overview.totalUsers ?? 0) > 0 ? ((overview.totalDocuments ?? 0) / (overview.totalUsers ?? 1)).toFixed(1) : "—"}
+                  </span>
+                </div>
+              </div>
+              <p className="mt-3 flex-shrink-0 text-[10px] text-zinc-500">
+                From tenant usage data
+              </p>
+            </motion.section>
           </div>
 
           {topDocsData.length > 0 && (
@@ -360,12 +513,12 @@ export default function AdminPage() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: 0.2 }}
-              className="mt-4 glass-surface rounded-xl border border-zinc-800/40 p-4 shadow-lg"
+              className="glass-surface mt-2 flex flex-shrink-0 flex-col rounded-xl border border-zinc-800/40 p-2 shadow-lg"
             >
-              <h2 className="mb-4 text-sm font-semibold text-zinc-200">
+              <h2 className="mb-1 text-sm font-semibold text-zinc-200">
                 Top documents by usage
               </h2>
-              <div style={{ height: Math.min(CHART_HEIGHT, Math.max(120, topDocsData.length * 36)) }} className="w-full">
+              <div style={{ height: Math.min(TOP_DOCS_MAX_HEIGHT, Math.max(60, topDocsData.length * 22)) }} className="w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={topDocsData}
@@ -376,13 +529,15 @@ export default function AdminPage() {
                     <XAxis type="number" stroke={AXIS_COLOR} fontSize={11} tickLine={false} axisLine={false} />
                     <YAxis type="category" dataKey="name" stroke={AXIS_COLOR} fontSize={11} tickLine={false} axisLine={false} width={140} />
                     <Tooltip
-                      contentStyle={{
-                        backgroundColor: TOOLTIP_BG,
-                        border: `1px solid ${TOOLTIP_BORDER}`,
-                        borderRadius: "8px",
-                        fontSize: "12px",
-                      }}
-                      formatter={(value: number) => [value, "Citations"]}
+                      content={({ active, payload, label }) => (
+                        <ChartTooltip
+                          active={active}
+                          payload={payload}
+                          label={label as string}
+                          valueLabel="Citations"
+                        />
+                      )}
+                      cursor={{ stroke: GRID_COLOR, strokeWidth: 1 }}
                     />
                     <Bar
                       dataKey="usage"
