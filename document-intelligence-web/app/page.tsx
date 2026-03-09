@@ -3,8 +3,16 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getApiBase, readResponseBody, formatError, AuthResponse } from "./lib/api";
+import {
+  getApiBase,
+  readResponseBody,
+  formatError,
+  AuthResponse,
+} from "./lib/api";
 import CreateWorkspaceModal from "./components/CreateWorkspaceModal";
+import { useLanguage } from "./components/LanguageProvider";
+import { useToast } from "./components/ToastProvider";
+import { ChatMessageBubble } from "./components/ChatMessageBubble";
 
 type Workspace = {
   id: string;
@@ -35,6 +43,7 @@ type ChatItem = {
   mode: "vector" | "hybrid";
   answer: string;
   sources: SourceDocument[];
+  createdAt: string;
   answerLanguage?: AnswerLanguagePreference;
 };
 
@@ -71,6 +80,9 @@ function resolveAnswerDir(
 
 export default function Home() {
   const router = useRouter();
+  const { locale, dir, toggleLocale } = useLanguage();
+  const rtl = dir === "rtl";
+  const { showToast } = useToast();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("");
   const [tenants, setTenants] = useState<TenantMembership[]>([]);
@@ -266,12 +278,21 @@ export default function Home() {
   async function handleUpload(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!canCallApi || !uploadFile) {
-      setStatus("Login, select workspace, and choose a PDF first.");
+      const msg =
+        locale === "ar"
+          ? "سجل الدخول واختر مساحة عمل ثم ملف PDF أولاً."
+          : "Login, select a workspace, and choose a PDF first.";
+      setStatus(msg);
+      showToast(msg, "error");
       return;
     }
 
     setBusyUpload(true);
-    setStatus("Uploading and enqueueing ingestion...");
+    setStatus(
+      locale === "ar"
+        ? "جاري الرفع وبدء المعالجة..."
+        : "Uploading and enqueueing ingestion...",
+    );
     try {
       const form = new FormData();
       form.append("file", uploadFile);
@@ -292,9 +313,16 @@ export default function Home() {
         throw new Error(formatError(res.status, body));
       }
 
-      setStatus("Upload complete. Ingestion started. Wait until document status is Ready.");
+      const msg =
+        locale === "ar"
+          ? "تم الرفع. بدأت عملية المعالجة. انتظر حتى تصبح حالة المستند جاهزة."
+          : "Upload complete. Ingestion started. Wait until document status is Ready.";
+      setStatus(msg);
+      showToast(msg, "success");
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : "Upload failed.");
+      const msg = err instanceof Error ? err.message : "Upload failed.";
+      setStatus(msg);
+      showToast(msg, "error");
     } finally {
       setBusyUpload(false);
     }
@@ -302,12 +330,19 @@ export default function Home() {
 
   async function ask(q: string) {
     if (!canCallApi || !q.trim()) {
-      setStatus("Login, select workspace, and enter a question.");
+      const msg =
+        locale === "ar"
+          ? "سجل الدخول واختر مساحة عمل ثم اكتب سؤالاً."
+          : "Login, select a workspace, and enter a question.";
+      setStatus(msg);
+      showToast(msg, "error");
       return;
     }
 
     setBusyAsk(true);
-    setStatus("Running RAG query...");
+    setStatus(
+      locale === "ar" ? "جاري تنفيذ استعلام RAG..." : "Running RAG query...",
+    );
     try {
       const languageHint =
         answerLanguage === "auto" ? undefined : answerLanguage === "ar" ? "ar" : "en";
@@ -337,21 +372,29 @@ export default function Home() {
 
       const json = body as AskResponse;
 
-      setChat((prev) => [
-        {
+      const createdAt = new Date().toISOString();
+
+      setChat((prev) => {
+        const next: ChatItem = {
           id: crypto.randomUUID(),
           question: q.trim(),
           mode,
           answer: json.answer,
           sources: json.sources,
+          createdAt,
           answerLanguage,
-        },
-        ...prev,
-      ]);
+        };
+        return [next, ...prev];
+      });
       setQuestion("");
-      setStatus("Answer received.");
+      const msg =
+        locale === "ar" ? "تم استلام الإجابة." : "Answer received.";
+      setStatus(msg);
+      showToast(msg, "success");
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : "Ask failed.");
+      const msg = err instanceof Error ? err.message : "Ask failed.";
+      setStatus(msg);
+      showToast(msg, "error");
     } finally {
       setBusyAsk(false);
     }
@@ -366,26 +409,32 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-black text-zinc-50">
+    <main className="min-h-screen bg-black text-zinc-50" dir={dir}>
       <div className="flex min-h-screen w-full">
         {/* Sidebar */}
         <aside className="hidden w-64 flex-col border-r border-zinc-800 bg-zinc-950 p-4 md:flex">
           <div className="mb-6">
-            <h1 className="text-lg font-semibold">Document Intelligence</h1>
+            <h1 className="text-lg font-semibold">
+              {locale === "ar" ? "نظام الذكاء المستندي" : "Document Intelligence"}
+            </h1>
             <p className="mt-1 text-xs text-zinc-500">
               {email} &middot; {role}
             </p>
           </div>
 
           <div className="mb-4 space-y-2">
-            <p className="text-xs font-semibold uppercase text-zinc-500">Tenant</p>
+            <p className="text-xs font-semibold uppercase text-zinc-500">
+              {locale === "ar" ? "المستأجر" : "Tenant"}
+            </p>
             <select
               className="w-full rounded border border-zinc-700 bg-transparent p-2 text-sm"
               value={activeTenantId}
               onChange={(e) => handleSwitchTenant(e.target.value)}
               disabled={tenants.length === 0}
             >
-              <option value="">Select tenant</option>
+              <option value="">
+                {locale === "ar" ? "اختر المستأجر" : "Select tenant"}
+              </option>
               {tenants.map((t) => (
                 <option key={t.tenantId} value={t.tenantId}>
                   {t.tenantName} ({t.role})
@@ -396,7 +445,9 @@ export default function Home() {
 
           <div className="mb-4 space-y-2">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold uppercase text-zinc-500">Workspaces</p>
+              <p className="text-xs font-semibold uppercase text-zinc-500">
+                {locale === "ar" ? "مساحات العمل" : "Workspaces"}
+              </p>
               <button
                 type="button"
                 className="text-xs text-zinc-400 hover:text-zinc-200"
@@ -411,7 +462,9 @@ export default function Home() {
               onChange={(e) => setWorkspaceId(e.target.value)}
               disabled={workspaces.length === 0}
             >
-              <option value="">Select workspace</option>
+              <option value="">
+                {locale === "ar" ? "اختر مساحة عمل" : "Select workspace"}
+              </option>
               {workspaces.map((w) => (
                 <option key={w.id} value={w.id}>
                   {w.name}
@@ -424,7 +477,7 @@ export default function Home() {
                 className="mt-1 w-full rounded bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-700"
                 onClick={() => setShowCreateWorkspaceModal(true)}
               >
-                New workspace
+                {locale === "ar" ? "مساحة عمل جديدة" : "New workspace"}
               </button>
             )}
           </div>
@@ -434,32 +487,34 @@ export default function Home() {
               href="/"
               className="block rounded px-3 py-2 text-zinc-200 hover:bg-zinc-800"
             >
-              Dashboard
+              {locale === "ar" ? "لوحة التحكم" : "Dashboard"}
             </Link>
             <Link
               href="/team"
               className="block rounded px-3 py-2 text-zinc-200 hover:bg-zinc-800"
             >
-              Team
+              {locale === "ar" ? "الفريق" : "Team"}
             </Link>
             {canCreateWorkspace && (
               <a
                 href="/admin"
                 className="block rounded px-3 py-2 text-zinc-200 hover:bg-zinc-800"
               >
-                Admin
+                {locale === "ar" ? "التحليلات" : "Admin"}
               </a>
             )}
           </nav>
 
           <div className="mt-auto space-y-2 text-sm">
-            <p className="text-xs font-semibold uppercase text-zinc-500">Session</p>
+            <p className="text-xs font-semibold uppercase text-zinc-500">
+              {locale === "ar" ? "الجلسة" : "Session"}
+            </p>
             <button
               type="button"
               onClick={handleLogout}
               className="w-full rounded border border-zinc-700 px-3 py-2 text-left text-zinc-200 hover:bg-zinc-800"
             >
-              Logout
+              {locale === "ar" ? "تسجيل الخروج" : "Logout"}
             </button>
             {status && (
               <p className="text-xs text-zinc-500 line-clamp-3">{status}</p>
@@ -471,11 +526,22 @@ export default function Home() {
         <div className="flex-1 p-4 md:p-6">
           <header className="mb-4 flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-semibold">Q&A Workspace</h2>
+              <h2 className="text-xl font-semibold">
+                {locale === "ar" ? "مساحة عمل الأسئلة والأجوبة" : "Q&A Workspace"}
+              </h2>
               <p className="mt-1 text-xs text-zinc-500">
-                Upload PDFs and ask focused questions.
+                {locale === "ar"
+                  ? "قم برفع ملفات PDF واطرح أسئلة مركزة."
+                  : "Upload PDFs and ask focused questions."}
               </p>
             </div>
+            <button
+              type="button"
+              onClick={toggleLocale}
+              className="rounded-full border border-zinc-700 bg-zinc-950 px-3 py-1 text-xs text-zinc-300 hover:bg-zinc-800"
+            >
+              {locale === "ar" ? "English" : "العربية"}
+            </button>
           </header>
 
           <CreateWorkspaceModal
@@ -485,7 +551,9 @@ export default function Home() {
           />
 
           <section className="mb-4 rounded border border-zinc-700 bg-zinc-950/40 p-4">
-            <h3 className="mb-2 text-sm font-medium text-zinc-200">Upload document</h3>
+            <h3 className="mb-2 text-sm font-medium text-zinc-200">
+              {locale === "ar" ? "رفع مستند" : "Upload document"}
+            </h3>
             <form className="grid gap-3 md:grid-cols-[1.6fr,1fr,auto]" onSubmit={handleUpload}>
               <input
                 type="file"
@@ -495,7 +563,11 @@ export default function Home() {
               />
               <input
                 className="rounded border border-zinc-700 bg-transparent p-2 text-sm"
-                placeholder="Language (optional: en/ar)"
+                placeholder={
+                  locale === "ar"
+                    ? "اللغة (اختياري: en/ar)"
+                    : "Language (optional: en/ar)"
+                }
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
               />
@@ -504,16 +576,24 @@ export default function Home() {
                 disabled={busyUpload || !isLoggedIn || !workspaceId || !uploadFile}
                 type="submit"
               >
-                {busyUpload ? "Uploading..." : "Upload"}
+                {busyUpload
+                  ? locale === "ar"
+                    ? "جاري الرفع..."
+                    : "Uploading..."
+                  : locale === "ar"
+                  ? "رفع"
+                  : "Upload"}
               </button>
             </form>
           </section>
 
           <section className="mb-4 rounded border border-zinc-700 bg-zinc-950/40 p-4">
             <div className="mb-3 flex flex-wrap items-center gap-3">
-              <h3 className="text-sm font-medium text-zinc-200">Ask questions</h3>
+              <h3 className="text-sm font-medium text-zinc-200">
+                {locale === "ar" ? "اطرح الأسئلة" : "Ask questions"}
+              </h3>
               <div className="flex flex-wrap items-center gap-2 text-xs">
-                <label>Mode</label>
+                <label>{locale === "ar" ? "الوضع" : "Mode"}</label>
                 <select
                   className="rounded border border-zinc-700 bg-transparent p-1 text-xs"
                   value={mode}
@@ -531,16 +611,22 @@ export default function Home() {
                   value={topK}
                   onChange={(e) => setTopK(Number(e.target.value))}
                 />
-                <label>Answer in</label>
+                <label>{locale === "ar" ? "لغة الإجابة" : "Answer in"}</label>
                 <select
                   className="rounded border border-zinc-700 bg-transparent p-1 text-xs"
                   value={answerLanguage}
                   onChange={(e) => setAnswerLanguage(e.target.value as AnswerLanguagePreference)}
                   title="Force answer language (Auto = follow question/content)"
                 >
-                  <option value="auto">Auto</option>
-                  <option value="en">English</option>
-                  <option value="ar">Arabic</option>
+                  <option value="auto">
+                    {locale === "ar" ? "تلقائي" : "Auto"}
+                  </option>
+                  <option value="en">
+                    {locale === "ar" ? "الإنجليزية" : "English"}
+                  </option>
+                  <option value="ar">
+                    {locale === "ar" ? "العربية" : "Arabic"}
+                  </option>
                 </select>
               </div>
             </div>
@@ -567,7 +653,11 @@ export default function Home() {
             >
               <input
                 className="flex-1 rounded border border-zinc-700 bg-transparent p-2 text-sm"
-                placeholder="Ask factual questions from the uploaded PDF..."
+                placeholder={
+                  locale === "ar"
+                    ? "اطرح أسئلة دقيقة عن ملف الـ PDF المرفوع..."
+                    : "Ask factual questions from the uploaded PDF..."
+                }
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
               />
@@ -576,37 +666,42 @@ export default function Home() {
                 disabled={busyAsk || !isLoggedIn || !workspaceId || !question.trim()}
                 type="submit"
               >
-                {busyAsk ? "Asking..." : "Ask"}
+                {busyAsk
+                  ? locale === "ar"
+                    ? "جاري السؤال..."
+                    : "Asking..."
+                  : locale === "ar"
+                  ? "اسأل"
+                  : "Ask"}
               </button>
             </form>
           </section>
 
           <section className="space-y-3 pb-10">
             {chat.map((item) => {
-              const answerDir = resolveAnswerDir(item.answerLanguage ?? "auto", item.answer);
+              const answerDir = resolveAnswerDir(
+                item.answerLanguage ?? "auto",
+                item.answer,
+              );
+              const answerRtl = answerDir === "rtl";
               return (
-                <article
-                  key={item.id}
-                  className="rounded border border-zinc-700 bg-zinc-950/60 p-4"
-                  dir={answerDir}
-                >
-                  <p className="mb-1 text-xs text-zinc-500">mode={item.mode}</p>
-                  <p className="font-medium">Q: {item.question}</p>
-                  <p className="mt-2 whitespace-pre-wrap text-sm" dir={answerDir}>
-                    A: {item.answer}
-                  </p>
-                  <div className="mt-3" dir="ltr">
-                    <p className="mb-1 text-xs font-medium text-zinc-400">Sources</p>
-                    <ul className="space-y-1 text-xs text-zinc-300">
-                      {item.sources.length === 0 && <li>No sources returned.</li>}
-                      {item.sources.map((src) => (
-                        <li key={src.id} className="rounded bg-zinc-900 p-2">
-                          {src.fileName} - {src.id}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </article>
+                <div key={item.id} className="space-y-2">
+                  <ChatMessageBubble
+                    role="user"
+                    content={item.question}
+                    createdAt={item.createdAt}
+                    locale={locale === "ar" ? "ar" : "en"}
+                    rtl={rtl}
+                  />
+                  <ChatMessageBubble
+                    role="assistant"
+                    content={item.answer}
+                    createdAt={item.createdAt}
+                    sources={item.sources}
+                    locale={locale === "ar" ? "ar" : "en"}
+                    rtl={answerRtl}
+                  />
+                </div>
               );
             })}
           </section>
