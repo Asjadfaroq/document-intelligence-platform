@@ -107,3 +107,17 @@ public class Answer
     public int LatencyMs { get; set; }
     public string? ModelName { get; set; }
 }
+
+public class TenantInvite
+{
+    public Guid Id { get; set; }
+    public Guid TenantId { get; set; }
+    public string Email { get; set; } = default!;
+    public string Code { get; set; } = default!;
+    public UserRole Role { get; set; }
+    public DateTime ExpiresAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public bool IsUsed { get; set; }
+
+    public Tenant Tenant { get; set; } = default!;
+}

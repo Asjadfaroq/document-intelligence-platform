@@ -134,12 +134,42 @@ public interface IApplicationDbContext
     IQueryable<User> Users { get; }
     IQueryable<Workspace> Workspaces { get; }
     IQueryable<Document> Documents { get; }
+    IQueryable<TenantInvite> TenantInvites { get; }
 
     Task AddAsync<TEntity>(TEntity entity, CancellationToken cancellationToken)
         where TEntity : class;
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }
+
+public record TenantMemberDto(
+    Guid Id,
+    string Email,
+    UserRole Role,
+    DateTime CreatedAt);
+
+public record GetTenantMembersQuery(Guid TenantId) : IRequest<IReadOnlyList<TenantMemberDto>>;
+
+public record CreateTenantInviteCommand(
+    Guid TenantId,
+    string Email,
+    UserRole Role) : IRequest<string>; // returns invite code
+
+public record AcceptInviteCommand(
+    string Code,
+    string Password) : IRequest<AuthResult>;
+
+public record TenantMembershipDto(
+    Guid TenantId,
+    string TenantName,
+    string TenantSlug,
+    string Role);
+
+public record GetUserTenantsQuery(string Email) : IRequest<IReadOnlyList<TenantMembershipDto>>;
+
+public record SwitchTenantCommand(
+    Guid TenantId,
+    string Email) : IRequest<AuthResult>;
 
 public record GetWorkspacesQuery(Guid TenantId) : IRequest<IReadOnlyList<WorkspaceDto>>;
 
@@ -248,7 +278,7 @@ public class RegisterTenantAndOwnerCommandHandler : IRequestHandler<RegisterTena
         var defaultWorkspace = new Workspace
         {
             Id = Guid.NewGuid(),
-            Name = "Default",
+            Name = "Default Workspace",
             Description = "Default workspace",
             TenantId = tenant.Id,
             CreatedAt = DateTime.UtcNow
@@ -621,5 +651,210 @@ public class AskQuestionCommandHandler : IRequestHandler<AskQuestionCommand, Ask
         await _db.SaveChangesAsync(cancellationToken);
 
         return new AskResponse(answerText, docs, (int)sw.ElapsedMilliseconds);
+    }
+}
+
+public class GetTenantMembersQueryHandler : IRequestHandler<GetTenantMembersQuery, IReadOnlyList<TenantMemberDto>>
+{
+    private readonly IApplicationDbContext _db;
+
+    public GetTenantMembersQueryHandler(IApplicationDbContext db)
+    {
+        _db = db;
+    }
+
+    public Task<IReadOnlyList<TenantMemberDto>> Handle(GetTenantMembersQuery request, CancellationToken cancellationToken)
+    {
+        var members = _db.Users
+            .Where(u => u.TenantId == request.TenantId)
+            .OrderBy(u => u.CreatedAt)
+            .Select(u => new TenantMemberDto(u.Id, u.Email, u.Role, u.CreatedAt))
+            .ToList()
+            .AsReadOnly();
+
+        return Task.FromResult<IReadOnlyList<TenantMemberDto>>(members);
+    }
+}
+
+public class CreateTenantInviteCommandHandler : IRequestHandler<CreateTenantInviteCommand, string>
+{
+    private readonly IApplicationDbContext _db;
+
+    public CreateTenantInviteCommandHandler(IApplicationDbContext db)
+    {
+        _db = db;
+    }
+
+    public async Task<string> Handle(CreateTenantInviteCommand request, CancellationToken cancellationToken)
+    {
+        var email = request.Email.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(email))
+            throw new ArgumentException("Email is required.", nameof(request.Email));
+
+        var existingUser = _db.Users.FirstOrDefault(u => u.TenantId == request.TenantId && u.Email == email);
+        if (existingUser is not null)
+            throw new InvalidOperationException("User is already a member of this tenant.");
+
+        var expiresAt = DateTime.UtcNow.AddDays(7);
+        string code;
+
+        // Simple unique code generator based on GUID; uniqueness enforced by DB index
+        do
+        {
+            code = Convert.ToBase64String(Guid.NewGuid().ToByteArray())
+                .Replace("+", string.Empty)
+                .Replace("/", string.Empty)
+                .Replace("=", string.Empty)
+                .Substring(0, 22);
+        } while (_db.TenantInvites.Any(i => i.Code == code));
+
+        var invite = new TenantInvite
+        {
+            Id = Guid.NewGuid(),
+            TenantId = request.TenantId,
+            Email = email,
+            Code = code,
+            Role = request.Role,
+            ExpiresAt = expiresAt,
+            CreatedAt = DateTime.UtcNow,
+            IsUsed = false
+        };
+
+        await _db.AddAsync(invite, cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
+
+        return code;
+    }
+}
+
+public class AcceptInviteCommandHandler : IRequestHandler<AcceptInviteCommand, AuthResult>
+{
+    private readonly IApplicationDbContext _db;
+    private readonly IPasswordHasher _passwordHasher;
+    private readonly IJwtTokenGenerator _jwt;
+    private readonly IRefreshTokenStore _refreshTokenStore;
+
+    public AcceptInviteCommandHandler(
+        IApplicationDbContext db,
+        IPasswordHasher passwordHasher,
+        IJwtTokenGenerator jwt,
+        IRefreshTokenStore refreshTokenStore)
+    {
+        _db = db;
+        _passwordHasher = passwordHasher;
+        _jwt = jwt;
+        _refreshTokenStore = refreshTokenStore;
+    }
+
+    public async Task<AuthResult> Handle(AcceptInviteCommand request, CancellationToken cancellationToken)
+    {
+        var code = request.Code.Trim();
+        if (string.IsNullOrWhiteSpace(code))
+            throw new UnauthorizedAccessException("Invalid invite code.");
+
+        var invite = _db.TenantInvites.FirstOrDefault(i => i.Code == code);
+        if (invite is null || invite.IsUsed || invite.ExpiresAt <= DateTime.UtcNow)
+            throw new UnauthorizedAccessException("Invite is invalid or expired.");
+
+        var email = invite.Email.ToLowerInvariant();
+        var existingUser = _db.Users.FirstOrDefault(u => u.TenantId == invite.TenantId && u.Email == email);
+        if (existingUser is not null)
+            throw new InvalidOperationException("User is already a member of this tenant.");
+
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            Email = email,
+            PasswordHash = _passwordHasher.Hash(request.Password),
+            Role = invite.Role,
+            TenantId = invite.TenantId,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        invite.IsUsed = true;
+
+        await _db.AddAsync(user, cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
+
+        var accessToken = _jwt.GenerateToken(user);
+        var lifespan = _jwt.GetAccessTokenLifespan();
+        var (refreshToken, _) = await _refreshTokenStore.CreateAsync(user.Id, cancellationToken);
+
+        return new AuthResult(
+            accessToken,
+            invite.TenantId.ToString(),
+            user.Email,
+            user.Role.ToString(),
+            refreshToken,
+            DateTime.UtcNow.Add(lifespan));
+    }
+}
+
+public class GetUserTenantsQueryHandler : IRequestHandler<GetUserTenantsQuery, IReadOnlyList<TenantMembershipDto>>
+{
+    private readonly IApplicationDbContext _db;
+
+    public GetUserTenantsQueryHandler(IApplicationDbContext db)
+    {
+        _db = db;
+    }
+
+    public Task<IReadOnlyList<TenantMembershipDto>> Handle(GetUserTenantsQuery request, CancellationToken cancellationToken)
+    {
+        var email = request.Email.Trim().ToLowerInvariant();
+
+        var memberships = (from u in _db.Users
+                           join t in _db.Tenants on u.TenantId equals t.Id
+                           where u.Email == email
+                           orderby t.CreatedAt
+                           select new TenantMembershipDto(
+                               t.Id,
+                               t.Name,
+                               t.Slug,
+                               u.Role.ToString()))
+                          .ToList()
+                          .AsReadOnly();
+
+        return Task.FromResult<IReadOnlyList<TenantMembershipDto>>(memberships);
+    }
+}
+
+public class SwitchTenantCommandHandler : IRequestHandler<SwitchTenantCommand, AuthResult>
+{
+    private readonly IApplicationDbContext _db;
+    private readonly IJwtTokenGenerator _jwt;
+    private readonly IRefreshTokenStore _refreshTokenStore;
+
+    public SwitchTenantCommandHandler(
+        IApplicationDbContext db,
+        IJwtTokenGenerator jwt,
+        IRefreshTokenStore refreshTokenStore)
+    {
+        _db = db;
+        _jwt = jwt;
+        _refreshTokenStore = refreshTokenStore;
+    }
+
+    public async Task<AuthResult> Handle(SwitchTenantCommand request, CancellationToken cancellationToken)
+    {
+        var email = request.Email.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(email))
+            throw new UnauthorizedAccessException("Invalid user.");
+
+        var user = _db.Users.FirstOrDefault(u => u.Email == email && u.TenantId == request.TenantId);
+        if (user is null)
+            throw new UnauthorizedAccessException("User does not belong to the requested tenant.");
+
+        var accessToken = _jwt.GenerateToken(user);
+        var lifespan = _jwt.GetAccessTokenLifespan();
+        var (refreshToken, _) = await _refreshTokenStore.CreateAsync(user.Id, cancellationToken);
+
+        return new AuthResult(
+            accessToken,
+            user.TenantId.ToString(),
+            user.Email,
+            user.Role.ToString(),
+            refreshToken,
+            DateTime.UtcNow.Add(lifespan));
     }
 }

@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getApiBase, readResponseBody, formatError, AUTH_KEY, StoredPrefill, AuthResponse } from "./lib/api";
+import { getApiBase, readResponseBody, formatError, AuthResponse } from "./lib/api";
 import CreateWorkspaceModal from "./components/CreateWorkspaceModal";
 
 type Workspace = {
@@ -37,6 +38,13 @@ type ChatItem = {
   answerLanguage?: AnswerLanguagePreference;
 };
 
+type TenantMembership = {
+  tenantId: string;
+  tenantName: string;
+  tenantSlug: string;
+  role: string;
+};
+
 const quickQuestions = [
   "What is the candidate's current role?",
   "List the top technical skills from this CV.",
@@ -65,6 +73,8 @@ export default function Home() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("");
+  const [tenants, setTenants] = useState<TenantMembership[]>([]);
+  const [activeTenantId, setActiveTenantId] = useState("");
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspaceId, setWorkspaceId] = useState("");
   const [language, setLanguage] = useState<string>("");
@@ -91,36 +101,31 @@ export default function Home() {
   function setUserFromAuth(a: AuthResponse) {
     setEmail(a.email ?? "");
     setRole(a.role ?? "");
+    setActiveTenantId(a.tenantId ?? "");
   }
 
   // Check session; if not logged in, redirect to sign in
   useEffect(() => {
     if (typeof window === "undefined") return;
     let cancelled = false;
-    fetch(`${getApiBase()}/auth/me`, { credentials: "include" })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: AuthResponse | null) => {
+    async function init() {
+      try {
+        const res = await fetch(`${getApiBase()}/auth/me`, { credentials: "include" });
+        if (!res.ok) {
+          throw new Error("Unauthorized");
+        }
+        const data = (await res.json()) as AuthResponse;
         if (cancelled) return;
         setAuthChecked(true);
-        if (!data) {
-          router.replace("/signin");
-          return;
-        }
         setUserFromAuth(data);
-        return fetch(`${getApiBase()}/workspaces`, { credentials: "include" });
-      })
-      .then((res) => (res?.ok ? res.json() : null))
-      .then((data: Workspace[] | null) => {
+        await Promise.all([loadWorkspaces(), loadTenants(data.tenantId)]);
+      } catch {
         if (cancelled) return;
-        if (Array.isArray(data)) {
-          setWorkspaces(data);
-          if (data.length > 0) setWorkspaceId((prev) => prev || data[0].id);
-        }
-      })
-      .catch(() => {
         setAuthChecked(true);
         router.replace("/signin");
-      });
+      }
+    }
+    void init();
     return () => { cancelled = true; };
   }, [router]);
 
@@ -166,15 +171,61 @@ export default function Home() {
     if (data.length > 0) setWorkspaceId((prev) => prev || data[0].id);
   }
 
+  async function loadTenants(initialTenantId?: string) {
+    const res = await fetchWithAuth(`${getApiBase()}/auth/tenants`);
+    const body = await readResponseBody(res);
+    if (!res.ok) {
+      const msg =
+        res.status >= 500
+          ? "Server error loading tenants. Try again."
+          : formatError(res.status, body);
+      throw new Error(msg);
+    }
+    const data = Array.isArray(body) ? (body as TenantMembership[]) : [];
+    setTenants(data);
+    if (!activeTenantId) {
+      const next = initialTenantId ?? data[0]?.tenantId ?? "";
+      setActiveTenantId(next);
+    }
+  }
+
   async function handleLogout() {
     try {
       await fetch(`${getApiBase()}/auth/logout`, { method: "POST", credentials: "include" });
     } catch { /* ignore */ }
     setRole("");
+    setTenants([]);
+    setActiveTenantId("");
     setWorkspaces([]);
     setWorkspaceId("");
     setStatus("Logged out.");
     router.replace("/signin");
+  }
+
+  async function handleSwitchTenant(nextTenantId: string) {
+    if (!nextTenantId || nextTenantId === activeTenantId) return;
+    setStatus("Switching tenant...");
+    try {
+      const res = await fetchWithAuth(`${getApiBase()}/auth/switch-tenant`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId: nextTenantId }),
+      });
+      const body = await readResponseBody(res);
+      if (!res.ok) {
+        throw new Error(formatError(res.status, body));
+      }
+      if (!body || typeof body !== "object" || !("role" in body)) {
+        throw new Error("Unexpected response from switch-tenant.");
+      }
+      const auth = body as AuthResponse;
+      setUserFromAuth(auth);
+      setActiveTenantId(auth.tenantId);
+      await loadWorkspaces();
+      setStatus("Tenant switched.");
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Failed to switch tenant.");
+    }
   }
 
   async function handleCreateWorkspaceSubmit(
@@ -319,6 +370,12 @@ export default function Home() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Document Intelligence Q&A</h1>
         <div className="flex items-center gap-2">
+          <Link
+            href="/team"
+            className="rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm font-medium hover:bg-zinc-700"
+          >
+            Team
+          </Link>
           {canCreateWorkspace && (
             <a
               href="/admin"
@@ -344,6 +401,19 @@ export default function Home() {
           Logged in as {email} ({role})
         </p>
         <div className="flex flex-wrap items-center gap-2">
+          <select
+            className="rounded border border-zinc-600 bg-transparent p-2"
+            value={activeTenantId}
+            onChange={(e) => handleSwitchTenant(e.target.value)}
+            disabled={tenants.length === 0}
+          >
+            <option value="">Select tenant</option>
+            {tenants.map((t) => (
+              <option key={t.tenantId} value={t.tenantId}>
+                {t.tenantName} ({t.role})
+              </option>
+            ))}
+          </select>
           <select
             className="rounded border border-zinc-600 bg-transparent p-2"
             value={workspaceId}

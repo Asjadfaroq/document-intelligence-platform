@@ -36,11 +36,13 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<Question> Questions => Set<Question>();
     public DbSet<Answer> Answers => Set<Answer>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<TenantInvite> TenantInvites => Set<TenantInvite>();
 
     IQueryable<Tenant> IApplicationDbContext.Tenants => Tenants.AsQueryable();
     IQueryable<User> IApplicationDbContext.Users => Users.AsQueryable();
     IQueryable<Workspace> IApplicationDbContext.Workspaces => Workspaces.AsQueryable();
     IQueryable<Document> IApplicationDbContext.Documents => Documents.AsQueryable();
+    IQueryable<TenantInvite> IApplicationDbContext.TenantInvites => TenantInvites.AsQueryable();
 
     public override async ValueTask<EntityEntry<TEntity>> AddAsync<TEntity>(TEntity entity, CancellationToken cancellationToken = default) where TEntity : class
     {
@@ -165,6 +167,23 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             entity.HasOne(x => x.User)
                 .WithMany()
                 .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<TenantInvite>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Email).IsRequired().HasMaxLength(256);
+            entity.Property(x => x.Code).IsRequired().HasMaxLength(64);
+            entity.Property(x => x.Role).IsRequired();
+            entity.Property(x => x.CreatedAt).HasDefaultValueSql("timezone('utc', now())");
+            entity.Property(x => x.ExpiresAt).IsRequired();
+            entity.Property(x => x.IsUsed).IsRequired();
+            entity.HasIndex(x => x.Code).IsUnique();
+
+            entity.HasOne(x => x.Tenant)
+                .WithMany()
+                .HasForeignKey(x => x.TenantId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }

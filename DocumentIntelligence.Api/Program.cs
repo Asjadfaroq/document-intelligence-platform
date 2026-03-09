@@ -178,6 +178,7 @@ app.MapGet("/metrics/basic", async (ApplicationDbContext db, CancellationToken c
 .RequireAuthorization("OwnerOrAdmin");
 
 app.MapAuth();
+app.MapTenant();
 app.MapWorkspaces();
 app.MapDocuments();
 app.MapAsk();

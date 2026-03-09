@@ -3,52 +3,48 @@
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getApiBase, readResponseBody, formatError, AUTH_KEY, StoredPrefill, AuthResponse } from "../lib/api";
+import { getApiBase, readResponseBody, formatError } from "../lib/api";
 
 export default function SignUpPage() {
   const router = useRouter();
-  const [tenantName, setTenantName] = useState("");
-  const [tenantSlug, setTenantSlug] = useState("");
-  const [ownerEmail, setOwnerEmail] = useState("");
-  const [ownerPassword, setOwnerPassword] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    try {
-      const raw = localStorage.getItem(AUTH_KEY);
-      if (raw) {
-        const prefill = JSON.parse(raw) as StoredPrefill;
-        if (prefill.tenantSlug) setTenantSlug(prefill.tenantSlug);
-      }
-    } catch { /* ignore */ }
+    fetch(`${getApiBase()}/auth/me`, { credentials: "include" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) router.replace("/");
+      })
+      .catch(() => { /* ignore */ });
   }, []);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (password !== confirmPassword) {
+      setStatus("Passwords do not match.");
+      return;
+    }
     setBusy(true);
     setStatus("Creating account...");
     try {
-      const res = await fetch(`${getApiBase()}/auth/register-tenant`, {
+      const res = await fetch(`${getApiBase()}/auth/signup`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          tenantName: tenantName.trim(),
-          tenantSlug: tenantSlug.trim(),
-          ownerEmail: ownerEmail.trim(),
-          ownerPassword: ownerPassword,
+          email: email.trim(),
+          password,
         }),
       });
       const body = await readResponseBody(res);
       if (!res.ok) throw new Error(formatError(res.status, body));
       if (!body || typeof body !== "object" || !("role" in body))
         throw new Error("Unexpected response.");
-      const auth = body as AuthResponse;
-      try {
-        localStorage.setItem(AUTH_KEY, JSON.stringify({ tenantSlug: tenantSlug.trim() } as StoredPrefill));
-      } catch { /* ignore */ }
       setStatus("Account created. Redirecting...");
       router.replace("/");
     } catch (err) {
@@ -64,32 +60,26 @@ export default function SignUpPage() {
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
         <input
           className="rounded border border-zinc-600 bg-transparent p-2"
-          placeholder="Tenant name"
-          value={tenantName}
-          onChange={(e) => setTenantName(e.target.value)}
-          required
-        />
-        <input
-          className="rounded border border-zinc-600 bg-transparent p-2"
-          placeholder="Tenant slug (e.g. acme)"
-          value={tenantSlug}
-          onChange={(e) => setTenantSlug(e.target.value)}
-          required
-        />
-        <input
-          className="rounded border border-zinc-600 bg-transparent p-2"
           type="email"
-          placeholder="Owner email"
-          value={ownerEmail}
-          onChange={(e) => setOwnerEmail(e.target.value)}
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
           required
         />
         <input
           className="rounded border border-zinc-600 bg-transparent p-2"
           type="password"
           placeholder="Password"
-          value={ownerPassword}
-          onChange={(e) => setOwnerPassword(e.target.value)}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
+        <input
+          className="rounded border border-zinc-600 bg-transparent p-2"
+          type="password"
+          placeholder="Confirm password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
           required
         />
         <button

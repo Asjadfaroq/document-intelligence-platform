@@ -3,11 +3,10 @@
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getApiBase, readResponseBody, formatError, AUTH_KEY, StoredPrefill, AuthResponse } from "../lib/api";
+import { getApiBase, readResponseBody, formatError, AuthResponse } from "../lib/api";
 
 export default function SignInPage() {
   const router = useRouter();
-  const [tenantSlug, setTenantSlug] = useState("acme");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
@@ -15,13 +14,6 @@ export default function SignInPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    try {
-      const raw = localStorage.getItem(AUTH_KEY);
-      if (raw) {
-        const prefill = JSON.parse(raw) as StoredPrefill;
-        if (prefill.tenantSlug) setTenantSlug(prefill.tenantSlug);
-      }
-    } catch { /* ignore */ }
     fetch(`${getApiBase()}/auth/me`, { credentials: "include" })
       .then((res) => res.ok ? res.json() : null)
       .then((data: AuthResponse | null) => {
@@ -35,12 +27,11 @@ export default function SignInPage() {
     setBusy(true);
     setStatus("Signing in...");
     try {
-      const res = await fetch(`${getApiBase()}/auth/login`, {
+      const res = await fetch(`${getApiBase()}/auth/login-simple`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          tenantSlug: tenantSlug.trim(),
           email: email.trim(),
           password,
         }),
@@ -49,10 +40,6 @@ export default function SignInPage() {
       if (!res.ok) throw new Error(formatError(res.status, body));
       if (!body || typeof body !== "object" || !("role" in body))
         throw new Error("Unexpected response.");
-      const auth = body as AuthResponse;
-      try {
-        localStorage.setItem(AUTH_KEY, JSON.stringify({ tenantSlug: tenantSlug.trim() } as StoredPrefill));
-      } catch { /* ignore */ }
       setStatus("Success. Redirecting...");
       router.replace("/");
     } catch (err) {
@@ -66,13 +53,6 @@ export default function SignInPage() {
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center gap-6 p-6">
       <h1 className="text-2xl font-semibold">Sign In</h1>
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-        <input
-          className="rounded border border-zinc-600 bg-transparent p-2"
-          placeholder="Tenant slug (e.g. acme)"
-          value={tenantSlug}
-          onChange={(e) => setTenantSlug(e.target.value)}
-          required
-        />
         <input
           className="rounded border border-zinc-600 bg-transparent p-2"
           type="email"
