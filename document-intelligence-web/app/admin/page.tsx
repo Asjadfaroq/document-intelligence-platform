@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { motion } from "framer-motion";
 import {
   BarChart,
   Bar,
@@ -21,17 +22,17 @@ type AuthMe = { tenantId: string; email: string; role: string };
 type DocCountPerWorkspace = { workspaceId: string; workspaceName: string; documentCount: number };
 type QuestionsPerDay = { date: string; count: number };
 type TopDocumentUsage = { documentId: string; fileName: string; usageCount: number };
-// API may return PascalCase; normalize to camelCase for charts
-function questionsPerDayMap(q: { date?: string; Date?: string; count?: number; Count?: number }): { date: string; count: number } {
-  return { date: (q.date ?? q.Date ?? "").slice(0, 10), count: q.count ?? q.Count ?? 0 };
+
+function questionsPerDayMap(q: { date?: string; Date?: string; count?: number; Count?: number }): { date: string; questions: number } {
+  return { date: (q.date ?? q.Date ?? "").slice(0, 10), questions: q.count ?? q.Count ?? 0 };
 }
 function docPerWorkspaceMap(d: { workspaceName?: string; WorkspaceName?: string; documentCount?: number; DocumentCount?: number }): { name: string; documents: number } {
   const name = d.workspaceName ?? d.WorkspaceName ?? "?";
-  return { name: name.slice(0, 15) + (name.length > 15 ? "…" : ""), documents: d.documentCount ?? d.DocumentCount ?? 0 };
+  return { name: name.length > 18 ? name.slice(0, 18) + "…" : name, documents: d.documentCount ?? d.DocumentCount ?? 0 };
 }
 function topDocMap(d: { fileName?: string; FileName?: string; usageCount?: number; UsageCount?: number }): { name: string; usage: number } {
   const name = d.fileName ?? d.FileName ?? "?";
-  return { name: name.slice(0, 20) + (name.length > 20 ? "…" : ""), usage: d.usageCount ?? d.UsageCount ?? 0 };
+  return { name: name.length > 24 ? name.slice(0, 24) + "…" : name, usage: d.usageCount ?? d.UsageCount ?? 0 };
 }
 
 type TenantOverview = {
@@ -43,6 +44,12 @@ type TenantOverview = {
   questionsPerDay?: (QuestionsPerDay & { Date?: string; Count?: number })[];
   topDocumentsByUsage?: TopDocumentUsage[];
 };
+
+const CHART_HEIGHT = 280;
+const GRID_COLOR = "rgba(113, 113, 122, 0.3)";
+const AXIS_COLOR = "rgb(161, 161, 170)";
+const TOOLTIP_BG = "rgb(24, 24, 27)";
+const TOOLTIP_BORDER = "rgba(113, 113, 122, 0.5)";
 
 export default function AdminPage() {
   const { showToast } = useToast();
@@ -128,7 +135,7 @@ export default function AdminPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showToast]);
 
   useEffect(() => {
     load();
@@ -136,181 +143,267 @@ export default function AdminPage() {
 
   if (loading && !overview) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-black p-6">
-        <p className="text-zinc-400">Loading admin overview…</p>
+      <main className="app-dark-bg app-grid flex min-h-screen items-center justify-center p-6">
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="text-sm text-zinc-500"
+        >
+          Loading analytics…
+        </motion.p>
       </main>
     );
   }
 
   if (error) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-black p-6">
-        <div className="w-full max-w-lg space-y-3">
-          <p className="text-amber-400">{error}</p>
-          <Link href="/" className="text-sm text-blue-400 hover:underline">
+      <main className="app-dark-bg app-grid flex min-h-screen items-center justify-center p-6">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="w-full max-w-md space-y-4 rounded-xl border border-zinc-800/50 bg-zinc-900/50 p-6"
+        >
+          <p className="text-amber-400/90">{error}</p>
+          <Link href="/" className="inline-block text-sm text-indigo-400 hover:text-indigo-300">
             ← Back to home
           </Link>
-        </div>
+        </motion.div>
       </main>
     );
   }
 
   if (!overview) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-black p-6">
-        <div className="w-full max-w-lg space-y-3">
-          <p className="text-zinc-400">No data.</p>
-          <Link href="/" className="text-sm text-blue-400 hover:underline">
+      <main className="app-dark-bg app-grid flex min-h-screen items-center justify-center p-6">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="w-full max-w-md space-y-4"
+        >
+          <p className="text-zinc-500">No data available.</p>
+          <Link href="/" className="inline-block text-sm text-indigo-400 hover:text-indigo-300">
             ← Back to home
           </Link>
-        </div>
+        </motion.div>
       </main>
     );
   }
 
-  const questionsChartData = (overview.questionsPerDay ?? []).map((q) => ({
-    date: questionsPerDayMap(q).date,
-    questions: questionsPerDayMap(q).count,
-  }));
+  const questionsChartData = (overview.questionsPerDay ?? []).map((q) => questionsPerDayMap(q));
   const docsByWorkspaceData = (overview.docCountPerWorkspace ?? []).map((d) => docPerWorkspaceMap(d));
   const topDocsData = (overview.topDocumentsByUsage ?? []).map((d) => topDocMap(d));
 
-  return (
-    <main className="min-h-screen bg-black text-zinc-50">
-      <div className="flex min-h-screen w-full">
-        {/* Sidebar layout to match dashboard */}
-        <aside className="hidden w-64 flex-col border-r border-zinc-800 bg-zinc-950 p-4 md:flex">
-          <div className="mb-6">
-            <h1 className="text-lg font-semibold">Document Intelligence</h1>
-            <p className="mt-1 text-xs text-zinc-500">
-              {email} &middot; {role}
-            </p>
-          </div>
+  const kpis = [
+    { label: "Documents", value: overview.totalDocuments ?? 0, isNumber: true },
+    { label: "Questions", value: overview.totalQuestions ?? 0, isNumber: true },
+    { label: "Users", value: overview.totalUsers ?? 0, isNumber: true },
+    {
+      label: "Avg latency",
+      value: overview.averageAnswerLatencyMs != null ? `${Math.round(overview.averageAnswerLatencyMs)} ms` : "—",
+      isNumber: false,
+    },
+  ];
 
-          <nav className="mb-4 space-y-1 text-sm">
-            <Link
-              href="/"
-              className="block rounded px-3 py-2 text-zinc-200 hover:bg-zinc-800"
-            >
+  return (
+    <main className="app-dark-bg app-grid min-h-screen text-zinc-50">
+      <div className="flex min-h-screen w-full">
+        {/* Sidebar */}
+        <aside className="glass-surface hidden w-56 flex-shrink-0 flex-col border-r border-zinc-800/40 p-3 md:flex">
+          <h1 className="mb-4 text-sm font-semibold tracking-tight text-zinc-100">
+            Doc Intelligence
+          </h1>
+
+          <nav className="space-y-0.5 border-t border-zinc-800/50 pt-3">
+            <Link href="/" className="block rounded px-2 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200">
               Dashboard
             </Link>
-            <Link
-              href="/team"
-              className="block rounded px-3 py-2 text-zinc-200 hover:bg-zinc-800"
-            >
+            <Link href="/team" className="block rounded px-2 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200">
               Team
             </Link>
-            <Link
-              href="/admin"
-              className="block rounded px-3 py-2 text-zinc-200 hover:bg-zinc-800"
-            >
+            <Link href="/admin" className="block rounded px-2 py-1.5 text-xs text-zinc-200 bg-zinc-800/50">
               Admin
             </Link>
           </nav>
 
-          <div className="mt-auto space-y-2 text-sm">
-            <p className="text-xs text-zinc-500">
-              Admin analytics for current tenant.
-            </p>
+          <div className="mt-auto border-t border-zinc-800/50 pt-3">
+            <p className="mb-1 px-2 text-[10px] text-zinc-500">{email}</p>
+            <p className="px-2 text-[10px] text-zinc-500">{role}</p>
           </div>
         </aside>
 
-        <div className="flex-1 p-4 md:p-6">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <h1 className="text-2xl font-semibold">Admin – Tenant Overview</h1>
+        <div className="flex-1 overflow-y-auto p-4 md:p-6">
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+            className="mb-6 flex flex-wrap items-center justify-between gap-4"
+          >
+            <div>
+              <h1 className="text-xl font-semibold tracking-tight text-zinc-100">
+                Analytics
+              </h1>
+              <p className="mt-1 text-sm text-zinc-500">
+                Tenant overview and usage metrics
+              </p>
+            </div>
             <Link
               href="/"
-              className="rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm font-medium hover:bg-zinc-700"
+              className="rounded-xl border border-zinc-700/50 bg-zinc-900/50 px-4 py-2 text-sm font-medium text-zinc-200 transition-colors hover:border-zinc-600 hover:bg-zinc-800/50"
             >
-              ← Back to Q&A
+              ← Back to Chat
             </Link>
+          </motion.div>
+
+          {/* KPI cards */}
+          <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {kpis.map((kpi, i) => (
+              <motion.div
+                key={kpi.label}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.25, delay: i * 0.05 }}
+                className="glass-surface rounded-xl border border-zinc-800/40 p-4 shadow-lg"
+              >
+                <p className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+                  {kpi.label}
+                </p>
+                <p className="mt-1 text-2xl font-semibold tabular-nums text-zinc-100">
+                  {kpi.isNumber ? (kpi.value as number).toLocaleString() : kpi.value}
+                </p>
+              </motion.div>
+            ))}
           </div>
 
-          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded border border-zinc-700 bg-zinc-900/50 p-4">
-          <p className="text-xs text-zinc-400">Total documents</p>
-          <p className="text-2xl font-semibold">{overview.totalDocuments ?? 0}</p>
-        </div>
-        <div className="rounded border border-zinc-700 bg-zinc-900/50 p-4">
-          <p className="text-xs text-zinc-400">Total questions</p>
-          <p className="text-2xl font-semibold">{overview.totalQuestions ?? 0}</p>
-        </div>
-        <div className="rounded border border-zinc-700 bg-zinc-900/50 p-4">
-          <p className="text-xs text-zinc-400">Users in tenant</p>
-          <p className="text-2xl font-semibold">{overview.totalUsers ?? 0}</p>
-        </div>
-        <div className="rounded border border-zinc-700 bg-zinc-900/50 p-4">
-          <p className="text-xs text-zinc-400">Avg answer latency</p>
-          <p className="text-2xl font-semibold">
-            {overview.averageAnswerLatencyMs != null && overview.averageAnswerLatencyMs !== undefined
-              ? `${Math.round(overview.averageAnswerLatencyMs)} ms`
-              : "—"}
-          </p>
-        </div>
-          </section>
+          {/* Charts grid */}
+          <div className="grid gap-4 lg:grid-cols-2">
+            {questionsChartData.length > 0 && (
+              <motion.section
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.1 }}
+                className="glass-surface rounded-xl border border-zinc-800/40 p-4 shadow-lg"
+              >
+                <h2 className="mb-4 text-sm font-semibold text-zinc-200">
+                  Questions per day
+                </h2>
+                <div style={{ height: CHART_HEIGHT }} className="w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={questionsChartData} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} vertical={false} />
+                      <XAxis dataKey="date" stroke={AXIS_COLOR} fontSize={11} tickLine={false} axisLine={false} />
+                      <YAxis stroke={AXIS_COLOR} fontSize={11} tickLine={false} axisLine={false} width={32} />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: TOOLTIP_BG,
+                          border: `1px solid ${TOOLTIP_BORDER}`,
+                          borderRadius: "8px",
+                          fontSize: "12px",
+                        }}
+                        labelStyle={{ color: AXIS_COLOR }}
+                        formatter={(value: number) => [value, "Questions"]}
+                        labelFormatter={(label) => `Date: ${label}`}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="questions"
+                        stroke="rgb(99, 102, 241)"
+                        strokeWidth={2}
+                        dot={{ fill: "rgb(99, 102, 241)", strokeWidth: 0, r: 3 }}
+                        activeDot={{ r: 5, fill: "rgb(129, 140, 248)" }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </motion.section>
+            )}
 
-          {questionsChartData.length > 0 && (
-            <section className="mt-4 rounded border border-zinc-700 bg-zinc-950/40 p-4">
-          <h2 className="mb-2 text-lg font-medium">Questions per day (last 30 days)</h2>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={questionsChartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#52525b" />
-                <XAxis dataKey="date" stroke="#a1a1aa" fontSize={12} />
-                <YAxis stroke="#a1a1aa" fontSize={12} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: "#27272a", border: "1px solid #52525b" }}
-                  labelStyle={{ color: "#a1a1aa" }}
-                />
-                <Line type="monotone" dataKey="questions" stroke="#22c55e" strokeWidth={2} dot={{ fill: "#22c55e" }} />
-              </LineChart>
-            </ResponsiveContainer>
+            {docsByWorkspaceData.length > 0 && (
+              <motion.section
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.15 }}
+                className="glass-surface rounded-xl border border-zinc-800/40 p-4 shadow-lg"
+              >
+                <h2 className="mb-4 text-sm font-semibold text-zinc-200">
+                  Documents per workspace
+                </h2>
+                <div style={{ height: CHART_HEIGHT }} className="w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={docsByWorkspaceData} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} vertical={false} />
+                      <XAxis dataKey="name" stroke={AXIS_COLOR} fontSize={11} tickLine={false} axisLine={false} />
+                      <YAxis stroke={AXIS_COLOR} fontSize={11} tickLine={false} axisLine={false} width={32} />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: TOOLTIP_BG,
+                          border: `1px solid ${TOOLTIP_BORDER}`,
+                          borderRadius: "8px",
+                          fontSize: "12px",
+                        }}
+                        formatter={(value: number) => [value, "Documents"]}
+                      />
+                      <Bar
+                        dataKey="documents"
+                        fill="rgb(99, 102, 241)"
+                        radius={[6, 6, 0, 0]}
+                        maxBarSize={48}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </motion.section>
+            )}
           </div>
-            </section>
-          )}
-
-          {docsByWorkspaceData.length > 0 && (
-            <section className="mt-4 rounded border border-zinc-700 bg-zinc-950/40 p-4">
-          <h2 className="mb-2 text-lg font-medium">Documents per workspace</h2>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={docsByWorkspaceData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#52525b" />
-                <XAxis dataKey="name" stroke="#a1a1aa" fontSize={12} />
-                <YAxis stroke="#a1a1aa" fontSize={12} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: "#27272a", border: "1px solid #52525b" }}
-                />
-                <Bar dataKey="documents" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-            </section>
-          )}
 
           {topDocsData.length > 0 && (
-            <section className="mt-4 rounded border border-zinc-700 bg-zinc-950/40 p-4">
-          <h2 className="mb-2 text-lg font-medium">Top documents by usage (cited in answers)</h2>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={topDocsData} layout="vertical" margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#52525b" />
-                <XAxis type="number" stroke="#a1a1aa" fontSize={12} />
-                <YAxis type="category" dataKey="name" stroke="#a1a1aa" fontSize={12} width={120} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: "#27272a", border: "1px solid #52525b" }}
-                />
-                <Bar dataKey="usage" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-            </section>
+            <motion.section
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.2 }}
+              className="mt-4 glass-surface rounded-xl border border-zinc-800/40 p-4 shadow-lg"
+            >
+              <h2 className="mb-4 text-sm font-semibold text-zinc-200">
+                Top documents by usage
+              </h2>
+              <div style={{ height: Math.min(CHART_HEIGHT, Math.max(120, topDocsData.length * 36)) }} className="w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={topDocsData}
+                    layout="vertical"
+                    margin={{ top: 4, right: 8, left: 4, bottom: 4 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} horizontal={false} />
+                    <XAxis type="number" stroke={AXIS_COLOR} fontSize={11} tickLine={false} axisLine={false} />
+                    <YAxis type="category" dataKey="name" stroke={AXIS_COLOR} fontSize={11} tickLine={false} axisLine={false} width={140} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: TOOLTIP_BG,
+                        border: `1px solid ${TOOLTIP_BORDER}`,
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                      }}
+                      formatter={(value: number) => [value, "Citations"]}
+                    />
+                    <Bar
+                      dataKey="usage"
+                      fill="rgb(34, 197, 94)"
+                      radius={[0, 6, 6, 0]}
+                      maxBarSize={20}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </motion.section>
           )}
 
           {questionsChartData.length === 0 && docsByWorkspaceData.length === 0 && topDocsData.length === 0 && (
-            <p className="mt-4 text-sm text-zinc-400">
-              No chart data yet. Upload documents and ask questions to see stats.
-            </p>
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="rounded-xl border border-zinc-800/40 bg-zinc-900/30 py-12 text-center text-sm text-zinc-500"
+            >
+              No analytics data yet. Upload documents and ask questions to see metrics.
+            </motion.p>
           )}
         </div>
       </div>
