@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Polly;
 using Polly.Extensions.Http;
+using StackExchange.Redis;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -82,6 +83,9 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("TenantUser", policy =>
         policy.RequireRole("Owner", "Admin", "Member"));
 });
+
+// Lightweight HttpClient for dependency health checks
+builder.Services.AddHttpClient("health-check");
 
 var connectionString = builder.Configuration.GetConnectionString("Default");
 
@@ -182,6 +186,120 @@ app.UseHttpsRedirection();
 app.UseAuthorization();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+
+app.MapGet("/health/deep", async (
+    ApplicationDbContext db,
+    IServiceProvider services,
+    IHttpClientFactory httpClientFactory,
+    IConfiguration config,
+    CancellationToken ct) =>
+{
+    var results = new Dictionary<string, object?>();
+
+    // Database check
+    try
+    {
+        var canConnect = await db.Database.CanConnectAsync(ct);
+        results["database"] = new { status = canConnect ? "healthy" : "unhealthy" };
+    }
+    catch (Exception ex)
+    {
+        results["database"] = new { status = "unhealthy", error = ex.Message };
+    }
+
+    // Redis check (only when configured)
+    var redisConnString = config.GetRedisConnectionString();
+    if (string.IsNullOrWhiteSpace(redisConnString))
+    {
+        results["redis"] = new { status = "disabled" };
+    }
+    else
+    {
+        try
+        {
+            var mux = services.GetService<IConnectionMultiplexer>();
+            if (mux == null)
+            {
+                results["redis"] = new { status = "unhealthy", error = "ConnectionMultiplexer not registered" };
+            }
+            else
+            {
+                var dbRedis = mux.GetDatabase();
+                var pong = await dbRedis.PingAsync();
+                results["redis"] = new { status = "healthy", latencyMs = pong.TotalMilliseconds };
+            }
+        }
+        catch (Exception ex)
+        {
+            results["redis"] = new { status = "unhealthy", error = ex.Message };
+        }
+    }
+
+    var client = httpClientFactory.CreateClient("health-check");
+    client.Timeout = TimeSpan.FromSeconds(3);
+
+    // Supabase reachability
+    var supabaseUrl = (config["SUPABASE_URL"] ?? string.Empty).Trim();
+    if (string.IsNullOrWhiteSpace(supabaseUrl))
+    {
+        results["supabase"] = new { status = "disabled" };
+    }
+    else
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Head, supabaseUrl);
+            var response = await client.SendAsync(request, ct);
+            results["supabase"] = new
+            {
+                status = response.IsSuccessStatusCode ? "healthy" : "degraded",
+                httpStatus = (int)response.StatusCode
+            };
+        }
+        catch (Exception ex)
+        {
+            results["supabase"] = new { status = "unhealthy", error = ex.Message };
+        }
+    }
+
+    // Hugging Face reachability (router base)
+    var hfApiKey = (config["HUGGINGFACE_API_KEY"] ?? string.Empty).Trim();
+    if (string.IsNullOrWhiteSpace(hfApiKey))
+    {
+        results["huggingface"] = new { status = "disabled" };
+    }
+    else
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "https://router.huggingface.co/health");
+            request.Headers.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", hfApiKey);
+            var response = await client.SendAsync(request, ct);
+            results["huggingface"] = new
+            {
+                status = response.IsSuccessStatusCode ? "healthy" : "degraded",
+                httpStatus = (int)response.StatusCode
+            };
+        }
+        catch (Exception ex)
+        {
+            results["huggingface"] = new { status = "unhealthy", error = ex.Message };
+        }
+    }
+
+    var overallHealthy = results.Values.All(v =>
+    {
+        if (v is not IDictionary<string, object?> dict) return true;
+        return dict.TryGetValue("status", out var s) && (string?)s is "healthy" or "disabled";
+    });
+
+    return Results.Json(new
+    {
+        status = overallHealthy ? "healthy" : "degraded",
+        checks = results
+    });
+});
 
 app.MapGet("/metrics/basic", async (ApplicationDbContext db, CancellationToken ct) =>
 {
