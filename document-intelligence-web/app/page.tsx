@@ -97,7 +97,7 @@ export default function Home() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspaceId, setWorkspaceId] = useState("");
   const [language, setLanguage] = useState<string>("");
-  const [topK, setTopK] = useState(5);
+  const [topK, setTopK] = useState(8);
   const [mode, setMode] = useState<"vector" | "hybrid">("hybrid");
   const [answerLanguage, setAnswerLanguage] = useState<AnswerLanguagePreference>("auto");
   const [question, setQuestion] = useState("");
@@ -885,7 +885,7 @@ export default function Home() {
                                 <input
                                   type="number"
                                   min={1}
-                                  max={10}
+                                  max={15}
                                   className="w-12 rounded border border-zinc-700/50 bg-transparent px-1.5 py-0.5 text-zinc-300"
                                   value={topK}
                                   onChange={(e) => setTopK(Number(e.target.value))}
@@ -1059,7 +1059,7 @@ export default function Home() {
                           <input
                             type="number"
                             min={1}
-                            max={10}
+                            max={15}
                             className="w-12 rounded border border-zinc-700/50 bg-transparent px-1.5 py-0.5 text-zinc-300"
                             value={topK}
                             onChange={(e) => setTopK(Number(e.target.value))}

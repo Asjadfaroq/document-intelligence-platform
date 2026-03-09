@@ -547,6 +547,13 @@ public class HuggingFaceEmbeddingService : IEmbeddingService
 
         if (!response.IsSuccessStatusCode)
         {
+            if (response.StatusCode == System.Net.HttpStatusCode.PaymentRequired ||
+                json.Contains("depleted your monthly", StringComparison.OrdinalIgnoreCase) ||
+                (json.Contains("depleted", StringComparison.OrdinalIgnoreCase) && json.Contains("credits", StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException(
+                    "HUGGINGFACE_CREDITS_EXHAUSTED: AI service credits are out of stock. Please try again later or contact your administrator.");
+            }
             throw new InvalidOperationException(
                 $"HuggingFace embedding error ({response.StatusCode}): {json}");
         }
@@ -594,7 +601,13 @@ public class HuggingFaceLLMClient : ILLMClient
                 ? " Answer in Arabic only."
                 : " Answer in English only.";
 
-        var prompt = $"Context:\n{context}\n\nQuestion:\n{question}\n\nInstructions:{languageInstruction}\n\nAnswer:";
+        var prompt = "You are a precise document Q&A assistant. Answer ONLY using the provided context.\n\n" +
+            "CRITICAL: Base your answer strictly on the context below. Do not infer, assume, or fabricate. " +
+            "If the information is NOT in the context, say you could not find it. Never state that something is absent; " +
+            "only say you could not find it in the given context.\n\n" +
+            "For lists (companies, roles, dates): include ALL matches found in the context. Do not omit any entity.\n" +
+            "For yes/no questions: answer only Yes or No based on explicit evidence in the context.\n" +
+            languageInstruction + "\n\nContext:\n" + context + "\n\nQuestion: " + question + "\n\nAnswer:";
 
         var payload = new
         {
@@ -603,8 +616,8 @@ public class HuggingFaceLLMClient : ILLMClient
             {
                 new { role = "user", content = prompt }
             },
-            max_tokens = 256,
-            temperature = 0.2
+            max_tokens = 512,
+            temperature = 0.15
         };
 
         // Use Responses API: https://router.huggingface.co/v1 (model in body, not URL)
@@ -630,6 +643,14 @@ public class HuggingFaceLLMClient : ILLMClient
             {
                 throw new InvalidOperationException(
                     "Hugging Face model is not available: enable at least one Inference Provider in your account at https://hf.co/settings/inference-providers (e.g. HF Inference or Groq), then retry.");
+            }
+            // User-friendly message when API credits are exhausted
+            if (response.StatusCode == System.Net.HttpStatusCode.PaymentRequired ||
+                json.Contains("depleted your monthly", StringComparison.OrdinalIgnoreCase) ||
+                json.Contains("depleted", StringComparison.OrdinalIgnoreCase) && json.Contains("credits", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "HUGGINGFACE_CREDITS_EXHAUSTED: AI service credits are out of stock. Please try again later or contact your administrator.");
             }
             throw new InvalidOperationException(
                 $"HuggingFace LLM error ({response.StatusCode}): {json}");
@@ -674,8 +695,8 @@ public class VectorSearchService : IVectorSearchService
                             c."Content",
                             c."DocumentId",
                             d."FileName",
-                            ((1 - (c."Embedding" <=> {2})) * 0.7
-                             + ts_rank_cd(to_tsvector('simple', c."Content"), plainto_tsquery('simple', {3})) * 0.3) AS score
+                            ((1 - (c."Embedding" <=> {2})) * 0.6
+                             + COALESCE(ts_rank_cd(to_tsvector('simple', c."Content"), plainto_tsquery('simple', {3})), 0) * 0.4) AS score
                         FROM "DocumentChunks" c
                         INNER JOIN "Documents" d ON d."Id" = c."DocumentId"
                         WHERE c."TenantId" = {0}
@@ -1163,7 +1184,8 @@ public class DocumentIngestionWorker : BackgroundService
                     }
 
                     var normalized = text.Trim();
-                    var pageChunks = SplitTextIntoChunks(normalized, 900, 150);
+                    // 1200 chars + 200 overlap: keeps full Experience entries together for better entity recall
+                    var pageChunks = SplitTextIntoChunks(normalized, 1200, 200);
                     var partIndex = 0;
                     foreach (var chunkText in pageChunks)
                     {
@@ -1204,6 +1226,11 @@ public class DocumentIngestionWorker : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Splits text into chunks, preferring to keep logical sections (e.g., Experience entries) intact.
+    /// Uses section-aware splitting: first split by paragraphs/sections, then only split long blocks.
+    /// This improves recall for structured documents like CVs where company names and roles must stay together.
+    /// </summary>
     private static IReadOnlyList<string> SplitTextIntoChunks(string text, int chunkSize, int overlap)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -1211,43 +1238,139 @@ public class DocumentIngestionWorker : BackgroundService
             return [];
         }
 
-        var compact = string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-        if (compact.Length <= chunkSize)
+        // Normalize: collapse multiple spaces/newlines but preserve paragraph breaks
+        var normalized = string.Join('\n', text
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(l => string.Join(' ', l.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).Trim())
+            .Where(l => l.Length > 0));
+
+        if (normalized.Length <= chunkSize)
         {
-            return [compact];
+            return [normalized];
         }
 
+        // Section headers that typically start employment/experience blocks (case-insensitive)
+        var sectionHeaders = new[] { "experience", "employment", "work", "work experience", "professional experience", "career", "تعليم", "خبرة", "الخبرة", "الوظائف" };
+        var lines = normalized.Split('\n');
+
+        // Build semantic blocks: merge consecutive lines, split at section boundaries
+        var blocks = new List<string>();
+        var currentBlock = new List<string>();
+
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            if (string.IsNullOrWhiteSpace(trimmed))
+                continue;
+
+            var isNewSection = sectionHeaders.Any(h =>
+                trimmed.StartsWith(h, StringComparison.OrdinalIgnoreCase) ||
+                (trimmed.Length <= 35 && trimmed.Contains(h, StringComparison.OrdinalIgnoreCase)));
+
+            if (isNewSection && currentBlock.Count > 0)
+            {
+                var blockText = string.Join("\n", currentBlock).Trim();
+                if (blockText.Length > 0)
+                    blocks.Add(blockText);
+                currentBlock = [trimmed];
+            }
+            else
+            {
+                currentBlock.Add(trimmed);
+            }
+        }
+
+        if (currentBlock.Count > 0)
+        {
+            var blockText = string.Join("\n", currentBlock).Trim();
+            if (blockText.Length > 0)
+                blocks.Add(blockText);
+        }
+
+        // If no section structure detected, fall back to paragraph-level split
+        if (blocks.Count <= 1)
+        {
+            blocks = normalized
+                .Split(new[] { "\n\n", "\n" }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => s.Trim())
+                .Where(s => s.Length > 0)
+                .ToList();
+        }
+
+        // Merge blocks into chunks of desired size, never splitting within a block if it fits
         var chunks = new List<string>();
+        var chunkBuffer = new List<string>();
+        var chunkLen = 0;
+
+        foreach (var block in blocks)
+        {
+            var blockLen = block.Length + (chunkBuffer.Count > 0 ? 2 : 0); // +2 for \n\n
+
+            if (chunkLen + blockLen <= chunkSize)
+            {
+                chunkBuffer.Add(block);
+                chunkLen += blockLen;
+            }
+            else
+            {
+                if (chunkBuffer.Count > 0)
+                {
+                    chunks.Add(string.Join("\n\n", chunkBuffer));
+                    chunkBuffer.Clear();
+                    chunkLen = 0;
+                }
+
+                if (block.Length <= chunkSize)
+                {
+                    chunkBuffer.Add(block);
+                    chunkLen = block.Length;
+                }
+                else
+                {
+                    // Block too large: use sliding window with overlap
+                    var subChunks = SplitBySlidingWindow(block, chunkSize, overlap);
+                    chunks.AddRange(subChunks);
+                }
+            }
+        }
+
+        if (chunkBuffer.Count > 0)
+            chunks.Add(string.Join("\n\n", chunkBuffer));
+
+        return chunks;
+    }
+
+    /// <summary>Fallback: sliding window split when a block exceeds chunk size.</summary>
+    private static IReadOnlyList<string> SplitBySlidingWindow(string text, int chunkSize, int overlap)
+    {
+        if (text.Length <= chunkSize)
+            return [text];
+
+        var result = new List<string>();
         var step = Math.Max(1, chunkSize - overlap);
         var start = 0;
 
-        while (start < compact.Length)
+        while (start < text.Length)
         {
-            var length = Math.Min(chunkSize, compact.Length - start);
-            var end = start + length;
-            if (end < compact.Length)
+            var len = Math.Min(chunkSize, text.Length - start);
+            var end = start + len;
+            if (end < text.Length)
             {
-                var lastSpace = compact.LastIndexOf(' ', end - 1, length);
+                var lastSpace = text.LastIndexOf(' ', end - 1, len);
                 if (lastSpace > start + (chunkSize / 2))
-                {
                     end = lastSpace;
-                }
             }
 
-            var chunk = compact[start..end].Trim();
+            var chunk = text[start..end].Trim();
             if (!string.IsNullOrWhiteSpace(chunk))
-            {
-                chunks.Add(chunk);
-            }
+                result.Add(chunk);
 
-            if (end >= compact.Length)
-            {
+            if (end >= text.Length)
                 break;
-            }
 
             start = Math.Max(0, end - overlap);
         }
 
-        return chunks;
+        return result;
     }
 }

@@ -16,7 +16,14 @@ export async function readResponseBody(res: Response): Promise<unknown | null> {
 
 export function formatError(status: number, body: unknown): string {
   if (typeof body === "string" && body.trim().length > 0) return body;
-  if (body && typeof body === "object") return JSON.stringify(body);
+  if (body && typeof body === "object") {
+    // RFC 7807 Problem Details: prefer readable "detail" field
+    const obj = body as Record<string, unknown>;
+    if (typeof obj.detail === "string" && obj.detail.trim().length > 0)
+      return obj.detail;
+    if (typeof obj.title === "string") return obj.title;
+    return JSON.stringify(body);
+  }
   return `Request failed with status ${status}.`;
 }
 

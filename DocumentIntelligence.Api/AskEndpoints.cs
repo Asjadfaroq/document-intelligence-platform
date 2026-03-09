@@ -43,7 +43,8 @@ public static class AskEndpoints
                 return Results.Forbid();
             }
 
-            var topK = request.TopK <= 0 ? 5 : Math.Min(request.TopK, 10);
+            // Default 8, max 15: improves recall for entity-heavy queries (companies, roles, dates)
+            var topK = request.TopK <= 0 ? 8 : Math.Min(request.TopK, 15);
             var mode = string.Equals(request.Mode, "hybrid", StringComparison.OrdinalIgnoreCase)
                 ? AskSearchMode.Hybrid
                 : AskSearchMode.Vector;

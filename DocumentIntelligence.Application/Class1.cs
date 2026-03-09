@@ -1,5 +1,6 @@
 using DocumentIntelligence.Domain;
 using MediatR;
+using Microsoft.Extensions.Logging;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -597,17 +598,20 @@ public class AskQuestionCommandHandler : IRequestHandler<AskQuestionCommand, Ask
     private readonly IEmbeddingService _embeddings;
     private readonly ILLMClient _llm;
     private readonly IVectorSearchService _vectorSearch;
+    private readonly ILogger<AskQuestionCommandHandler> _logger;
 
     public AskQuestionCommandHandler(
         IApplicationDbContext db,
         IEmbeddingService embeddings,
         ILLMClient llm,
-        IVectorSearchService vectorSearch)
+        IVectorSearchService vectorSearch,
+        ILogger<AskQuestionCommandHandler> logger)
     {
         _db = db;
         _embeddings = embeddings;
         _llm = llm;
         _vectorSearch = vectorSearch;
+        _logger = logger;
     }
 
     public async Task<AskResponse> Handle(AskQuestionCommand request, CancellationToken cancellationToken)
@@ -615,7 +619,7 @@ public class AskQuestionCommandHandler : IRequestHandler<AskQuestionCommand, Ask
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var questionEmbedding = await _embeddings.GetEmbeddingAsync(request.Question, cancellationToken);
 
-        var topK = request.TopK <= 0 ? 5 : Math.Min(request.TopK, 10);
+        var topK = request.TopK <= 0 ? 8 : Math.Min(request.TopK, 15);
         var chunks = await _vectorSearch.SearchChunksAsync(
             request.TenantId,
             request.WorkspaceId,
@@ -624,6 +628,23 @@ public class AskQuestionCommandHandler : IRequestHandler<AskQuestionCommand, Ask
             request.Mode,
             topK,
             cancellationToken);
+
+        // Log retrieved chunks for debugging and recall verification (enable "DocumentIntelligence.Application": "Debug" in appsettings)
+        if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            var chunkSummary = string.Join(" | ", chunks.Select(c =>
+            {
+                var preview = c.Content.Length > 80 ? c.Content[..80] + "..." : c.Content;
+                return $"[{c.FileName}] {c.ChunkId.ToString("N")[..8]} \"{preview.Replace("\n", " ", StringComparison.Ordinal)}\"";
+            }));
+            _logger.LogDebug(
+                "RAG retrieval: Q=\"{Question}\" Mode={Mode} TopK={TopK} Retrieved={Count}. Chunks: {ChunkSummary}",
+                request.Question.Length > 100 ? request.Question[..100] + "..." : request.Question,
+                request.Mode,
+                topK,
+                chunks.Count,
+                chunkSummary);
+        }
 
         var contextText = chunks.Count > 0
             ? string.Join("\n\n---\n\n", chunks.Select(c => $"[{c.FileName}]\n{c.Content}"))

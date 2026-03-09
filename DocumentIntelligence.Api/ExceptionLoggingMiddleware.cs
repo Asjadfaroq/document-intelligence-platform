@@ -61,12 +61,17 @@ namespace DocumentIntelligence.Api;
         var title = "An unexpected error occurred.";
         var type = "https://tools.ietf.org/html/rfc7231#section-6.6.1";
 
-        // Example of mapping common framework exceptions without changing existing logic:
-        // if (exception is UnauthorizedAccessException) { status = StatusCodes.Status403Forbidden; ... }
+        // HuggingFace API credits exhausted – return 402 with user-friendly message
+        if (exception.Message.StartsWith("HUGGINGFACE_CREDITS_EXHAUSTED:", StringComparison.Ordinal))
+        {
+            status = StatusCodes.Status402PaymentRequired;
+            title = "AI service credits exhausted";
+            type = "https://tools.ietf.org/html/rfc7231#section-6.5.2";
+        }
 
-        var detail = _environment.IsDevelopment()
-            ? exception.ToString()
-            : exception.Message;
+        var detail = status == StatusCodes.Status402PaymentRequired
+            ? "AI service credits are out of stock. Please try again later or contact your administrator."
+            : (_environment.IsDevelopment() ? exception.ToString() : exception.Message);
 
         var problem = new ProblemDetails
         {
