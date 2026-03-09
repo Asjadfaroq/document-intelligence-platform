@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
 import { getApiBase, readResponseBody, formatError, AuthResponse } from "../lib/api";
 import { useToast } from "../components/ToastProvider";
 
@@ -27,6 +28,27 @@ type TenantMembership = {
   role: string;
 };
 
+function getInitials(email: string): string {
+  const part = email.split("@")[0];
+  if (part.length >= 2) return part.slice(0, 2).toUpperCase();
+  return part.slice(0, 1).toUpperCase();
+}
+
+function RoleBadge({ role }: { role: string }) {
+  const isAdmin = role === "Admin" || role === "Owner";
+  return (
+    <span
+      className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${
+        isAdmin
+          ? "bg-indigo-500/20 text-indigo-300"
+          : "bg-zinc-700/60 text-zinc-400"
+      }`}
+    >
+      {role}
+    </span>
+  );
+}
+
 export default function TeamPage() {
   const router = useRouter();
   const { showToast } = useToast();
@@ -48,6 +70,7 @@ export default function TeamPage() {
   const isLoggedIn = Boolean(role);
 
   const canCreateWorkspace = role === "Owner" || role === "Admin";
+  const canInvite = role === "Owner" || role === "Admin";
 
   function setUserFromAuth(a: AuthResponse) {
     setEmail(a.email ?? "");
@@ -104,9 +127,7 @@ export default function TeamPage() {
     }
 
     void init();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [router]);
 
   async function loadWorkspaces() {
@@ -146,9 +167,7 @@ export default function TeamPage() {
   async function loadMembers() {
     const res = await fetch(`${getApiBase()}/tenant/members`, { credentials: "include" });
     const body = await readResponseBody(res);
-    if (!res.ok) {
-      throw new Error(formatError(res.status, body));
-    }
+    if (!res.ok) throw new Error(formatError(res.status, body));
     const data = Array.isArray(body) ? (body as TenantMember[]) : [];
     setMembers(data);
   }
@@ -177,9 +196,7 @@ export default function TeamPage() {
         body: JSON.stringify({ tenantId: nextTenantId }),
       });
       const body = await readResponseBody(res);
-      if (!res.ok) {
-        throw new Error(formatError(res.status, body));
-      }
+      if (!res.ok) throw new Error(formatError(res.status, body));
       if (!body || typeof body !== "object" || !("role" in body)) {
         throw new Error("Unexpected response from switch-tenant.");
       }
@@ -190,8 +207,7 @@ export default function TeamPage() {
       setStatus("Tenant switched.");
       showToast("Tenant switched.", "success");
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Failed to switch tenant.";
+      const msg = err instanceof Error ? err.message : "Failed to switch tenant.";
       setStatus(msg);
       showToast(msg, "error");
     }
@@ -199,20 +215,14 @@ export default function TeamPage() {
 
   async function handleRefreshWorkspaces() {
     if (!isLoggedIn) {
-      const msg = "Login first.";
-      setStatus(msg);
-      showToast(msg, "error");
+      showToast("Login first.", "error");
       return;
     }
-    setStatus("Refreshing workspaces...");
     try {
       await loadWorkspaces();
-      setStatus("Workspaces refreshed.");
       showToast("Workspaces refreshed.", "success");
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Failed to refresh workspaces.";
-      setStatus(msg);
+      const msg = err instanceof Error ? err.message : "Failed to refresh workspaces.";
       showToast(msg, "error");
     }
   }
@@ -220,7 +230,6 @@ export default function TeamPage() {
   async function handleCreateInvite(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
-    setStatus("Creating invite...");
     setLatestCode(null);
     try {
       const res = await fetch(`${getApiBase()}/tenant/invitations`, {
@@ -236,14 +245,11 @@ export default function TeamPage() {
       }
       const { code } = body as { code: string };
       setLatestCode(code);
-      setStatus("Invite created. Share this code with the user.");
       showToast("Invite created.", "success");
       setInviteEmail("");
       await loadMembers();
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Failed to create invite.";
-      setStatus(msg);
+      const msg = err instanceof Error ? err.message : "Failed to create invite.";
       showToast(msg, "error");
     } finally {
       setBusy(false);
@@ -253,13 +259,10 @@ export default function TeamPage() {
   async function handleJoinTenant(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!joinCode.trim()) {
-      const msg = "Invite code is required.";
-      setStatus(msg);
-      showToast(msg, "error");
+      showToast("Invite code is required.", "error");
       return;
     }
     setBusy(true);
-    setStatus("Joining tenant with invite code...");
     try {
       const res = await fetch(`${getApiBase()}/auth/accept-invite`, {
         method: "POST",
@@ -275,220 +278,287 @@ export default function TeamPage() {
       if (!body || typeof body !== "object" || !("role" in body)) {
         throw new Error("Unexpected response from accept-invite endpoint.");
       }
-      const msg =
-        "Joined tenant successfully. You can now switch tenants from the sidebar.";
-      setStatus(msg);
-      showToast(msg, "success");
+      showToast("Joined tenant successfully.", "success");
       setJoinCode("");
       setJoinPassword("");
       await loadMembers();
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Failed to join tenant.";
-      setStatus(msg);
+      const msg = err instanceof Error ? err.message : "Failed to join tenant.";
       showToast(msg, "error");
     } finally {
       setBusy(false);
     }
   }
 
-  return (
-    <main className="min-h-screen bg-black text-zinc-50">
-      <div className="flex min-h-screen w-full">
-        {/* Sidebar (same as dashboard) */}
-        <aside className="hidden w-64 flex-col border-r border-zinc-800 bg-zinc-950 p-4 md:flex">
-          <div className="mb-6">
-            <h1 className="text-lg font-semibold">Document Intelligence</h1>
-            <p className="mt-1 text-xs text-zinc-500">
-              {email} &middot; {role}
-            </p>
-          </div>
+  async function copyInviteCode(code: string) {
+    try {
+      await navigator.clipboard.writeText(code);
+      showToast("Code copied to clipboard.", "success");
+    } catch {
+      showToast("Failed to copy.", "error");
+    }
+  }
 
-          <div className="mb-4 space-y-2">
-            <p className="text-xs font-semibold uppercase text-zinc-500">Tenant</p>
+  return (
+    <main className="app-dark-bg app-grid min-h-screen text-zinc-50">
+      <div className="flex min-h-screen w-full">
+        {/* Sidebar */}
+        <aside className="glass-surface hidden w-56 flex-shrink-0 flex-col border-r border-zinc-800/40 p-3 md:flex">
+          <h1 className="mb-4 text-sm font-semibold tracking-tight text-zinc-100">
+            Doc Intelligence
+          </h1>
+
+          <div className="space-y-2">
             <select
-              className="w-full rounded border border-zinc-700 bg-transparent p-2 text-sm"
+              className="w-full rounded-lg border border-zinc-700/60 bg-zinc-900/60 px-2 py-1.5 text-xs text-zinc-200 focus:border-zinc-500 focus:outline-none"
               value={activeTenantId}
               onChange={(e) => handleSwitchTenant(e.target.value)}
               disabled={tenants.length === 0}
             >
-              <option value="">Select tenant</option>
               {tenants.map((t) => (
                 <option key={t.tenantId} value={t.tenantId}>
-                  {t.tenantName} ({t.role})
+                  {t.tenantName}
                 </option>
               ))}
             </select>
-          </div>
-
-          <div className="mb-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold uppercase text-zinc-500">Workspaces</p>
-              <button
-                type="button"
-                className="text-xs text-zinc-400 hover:text-zinc-200"
-                onClick={handleRefreshWorkspaces}
+            <div className="flex gap-1">
+              <select
+                className="flex-1 rounded-lg border border-zinc-700/60 bg-zinc-900/60 px-2 py-1.5 text-xs text-zinc-200 focus:border-zinc-500 focus:outline-none"
+                value={workspaceId}
+                onChange={(e) => setWorkspaceId(e.target.value)}
+                disabled={workspaces.length === 0}
               >
-                Refresh
-              </button>
+                {workspaces.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+              {canCreateWorkspace && (
+                <Link
+                  href="/"
+                  className="rounded-lg bg-zinc-700/60 px-2 py-1.5 text-xs text-zinc-200 hover:bg-zinc-600/60"
+                  title="New workspace"
+                >
+                  +
+                </Link>
+              )}
             </div>
-            <select
-              className="w-full rounded border border-zinc-700 bg-transparent p-2 text-sm"
-              value={workspaceId}
-              onChange={(e) => setWorkspaceId(e.target.value)}
-              disabled={workspaces.length === 0}
-            >
-              <option value="">Select workspace</option>
-              {workspaces.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </select>
-            {canCreateWorkspace && (
-              <button
-                type="button"
-                className="mt-1 w-full rounded bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-700"
-                onClick={() => router.push("/")} // creation is on dashboard
-              >
-                New workspace
-              </button>
-            )}
           </div>
 
-          <nav className="mb-4 space-y-1 text-sm">
-            <Link
-              href="/"
-              className="block rounded px-3 py-2 text-zinc-200 hover:bg-zinc-800"
-            >
+          <nav className="mt-3 space-y-0.5 border-t border-zinc-800/50 pt-3">
+            <Link href="/" className="block rounded px-2 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200">
               Dashboard
             </Link>
-            <Link
-              href="/team"
-              className="block rounded px-3 py-2 text-zinc-200 hover:bg-zinc-800"
-            >
+            <Link href="/team" className="block rounded px-2 py-1.5 text-xs text-zinc-200 bg-zinc-800/50">
               Team
             </Link>
             {canCreateWorkspace && (
-              <a
-                href="/admin"
-                className="block rounded px-3 py-2 text-zinc-200 hover:bg-zinc-800"
-              >
+              <a href="/admin" className="block rounded px-2 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200">
                 Admin
               </a>
             )}
           </nav>
 
-          <div className="mt-auto space-y-2 text-sm">
-            <p className="text-xs font-semibold uppercase text-zinc-500">Session</p>
+          <div className="mt-auto border-t border-zinc-800/50 pt-3">
+            <p className="mb-1 px-2 text-[10px] text-zinc-500">{email}</p>
             <button
               type="button"
               onClick={handleLogout}
-              className="w-full rounded border border-zinc-700 px-3 py-2 text-left text-zinc-200 hover:bg-zinc-800"
+              className="w-full rounded px-2 py-1.5 text-left text-xs text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-200"
             >
               Logout
             </button>
-            {status && (
-              <p className="text-xs text-zinc-500 line-clamp-3">{status}</p>
-            )}
           </div>
         </aside>
 
         {/* Main content */}
-        <div className="flex-1 p-4 md:p-6">
-          <div className="mb-4 flex items-center justify-between">
-            <h1 className="text-2xl font-semibold">Team</h1>
-          </div>
+        <div className="flex-1 overflow-y-auto p-4 md:p-6">
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+            className="mb-6"
+          >
+            <h1 className="text-xl font-semibold tracking-tight text-zinc-100">
+              Team
+            </h1>
+            <p className="mt-1 text-sm text-zinc-500">
+              Manage members and invitations for your workspace
+            </p>
+          </motion.div>
 
-          <section className="rounded border border-zinc-700 bg-zinc-950/40 p-4">
-        <h2 className="mb-2 text-lg font-medium">Members</h2>
-        {members.length === 0 ? (
-          <p className="text-sm text-zinc-400">No members found.</p>
-        ) : (
-          <ul className="space-y-2 text-sm">
-            {members.map((m) => (
-              <li
-                key={m.id}
-                className="flex items-center justify-between rounded border border-zinc-700 px-3 py-2"
+          {/* Responsive grid: 3 cols (Members|Invite|Join) or 2 cols (Members|Join) */}
+          <div
+            className={`grid gap-4 sm:grid-cols-2 ${canInvite ? "lg:grid-cols-3" : ""}`}
+          >
+            {/* Column 1: Members */}
+            <motion.section
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.05 }}
+              className="glass-surface flex min-h-[200px] flex-col rounded-xl border border-zinc-800/40 p-4 shadow-lg sm:min-h-0"
+            >
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-zinc-200">
+                  Members
+                </h2>
+                <span className="text-[11px] text-zinc-500">{members.length} total</span>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <AnimatePresence mode="popLayout">
+                  {members.length === 0 ? (
+                    <motion.p
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="py-12 text-center text-sm text-zinc-500"
+                    >
+                      No members in this tenant yet.
+                    </motion.p>
+                  ) : (
+                    <ul className="space-y-1.5">
+                      {members.map((m, i) => (
+                        <motion.li
+                          key={m.id}
+                          initial={{ opacity: 0, x: -8 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: 8 }}
+                          transition={{ duration: 0.2, delay: i * 0.03 }}
+                          className="flex items-center gap-3 rounded-lg border border-zinc-700/30 bg-zinc-900/30 px-3 py-2 transition-colors hover:border-zinc-600/40 hover:bg-zinc-800/30"
+                        >
+                          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-indigo-500/20 text-[11px] font-semibold text-indigo-300">
+                            {getInitials(m.email)}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-zinc-200">{m.email}</p>
+                            <p className="text-[10px] text-zinc-500">
+                              {new Date(m.createdAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <RoleBadge role={m.role} />
+                        </motion.li>
+                      ))}
+                    </ul>
+                  )}
+                </AnimatePresence>
+              </div>
+            </motion.section>
+
+            {/* Column 2: Invite Member */}
+            {canInvite && (
+              <motion.section
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.1 }}
+                className="glass-surface flex flex-col rounded-xl border border-zinc-800/40 p-4 shadow-lg"
               >
-                <span>
-                  {m.email}{" "}
-                  <span className="text-xs text-zinc-400">({m.role})</span>
-                </span>
-                <span className="text-xs text-zinc-500">
-                  Joined {new Date(m.createdAt).toLocaleString()}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-          </section>
+                <h2 className="mb-3 text-sm font-semibold text-zinc-200">
+                  Invite Member
+                </h2>
+                <form className="flex flex-col gap-3" onSubmit={handleCreateInvite}>
+                  <input
+                    type="email"
+                    placeholder="Email address"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    required
+                    className="w-full rounded-xl border border-zinc-700/50 bg-zinc-900/50 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
+                  />
+                  <div className="flex gap-2">
+                    <select
+                      value={inviteRole}
+                      onChange={(e) => setInviteRole(e.target.value as "Member" | "Admin")}
+                      className="flex-1 rounded-xl border border-zinc-700/50 bg-zinc-900/50 px-3 py-2 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none"
+                    >
+                      <option value="Member">Member</option>
+                      <option value="Admin">Admin</option>
+                    </select>
+                    <button
+                      type="submit"
+                      disabled={busy}
+                      className="rounded-xl bg-indigo-500 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-indigo-500/20 transition-all hover:bg-indigo-400 disabled:opacity-50"
+                    >
+                      {busy ? (
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-transparent" />
+                      ) : (
+                        "Invite"
+                      )}
+                    </button>
+                  </div>
+                </form>
+                <AnimatePresence>
+                  {latestCode && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="mt-3 overflow-hidden"
+                    >
+                      <div className="flex flex-col gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-3 py-2">
+                        <span className="text-[10px] text-zinc-500">Code created:</span>
+                        <div className="flex items-center gap-2">
+                          <code className="flex-1 truncate font-mono text-xs text-indigo-200">{latestCode}</code>
+                          <button
+                            type="button"
+                            onClick={() => copyInviteCode(latestCode)}
+                            className="rounded-lg border border-zinc-600/50 px-2 py-1 text-[10px] text-zinc-300 hover:bg-zinc-800/50 hover:text-zinc-100"
+                          >
+                            Copy
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.section>
+            )}
 
-          <section className="mt-4 rounded border border-zinc-700 bg-zinc-950/40 p-4">
-        <h2 className="mb-2 text-lg font-medium">Invite Member</h2>
-        <form className="flex flex-col gap-3 md:flex-row" onSubmit={handleCreateInvite}>
-          <input
-            className="flex-1 rounded border border-zinc-600 bg-transparent p-2"
-            type="email"
-            placeholder="User email"
-            value={inviteEmail}
-            onChange={(e) => setInviteEmail(e.target.value)}
-            required
-          />
-          <select
-            className="rounded border border-zinc-600 bg-transparent p-2"
-            value={inviteRole}
-            onChange={(e) => setInviteRole(e.target.value as "Member" | "Admin")}
-          >
-            <option value="Member">Member</option>
-            <option value="Admin">Admin</option>
-          </select>
-          <button
-            className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-            type="submit"
-            disabled={busy}
-          >
-            {busy ? "Creating..." : "Create Invite"}
-          </button>
-        </form>
-        {latestCode && (
-          <p className="mt-3 text-sm text-zinc-300">
-            Invite code:{" "}
-            <span className="font-mono rounded bg-zinc-900 px-2 py-1">{latestCode}</span>
-          </p>
-        )}
-      </section>
-
-      <section className="rounded border border-zinc-700 p-4">
-        <h2 className="mb-2 text-lg font-medium">Join Another Tenant</h2>
-        <form className="flex flex-col gap-3 md:flex-row" onSubmit={handleJoinTenant}>
-          <input
-            className="flex-1 rounded border border-zinc-600 bg-transparent p-2"
-            placeholder="Invite code"
-            value={joinCode}
-            onChange={(e) => setJoinCode(e.target.value)}
-            required
-          />
-          <input
-            className="rounded border border-zinc-600 bg-transparent p-2"
-            type="password"
-            placeholder="Password"
-            value={joinPassword}
-            onChange={(e) => setJoinPassword(e.target.value)}
-            required
-          />
-          <button
-            className="rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-            type="submit"
-            disabled={busy}
-          >
-            {busy ? "Joining..." : "Join Tenant"}
-          </button>
-        </form>
-          </section>
+            {/* Column 3: Join Tenant */}
+            <motion.section
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.15 }}
+              className="glass-surface flex flex-col rounded-xl border border-zinc-800/40 p-4 shadow-lg"
+            >
+              <h2 className="mb-3 text-sm font-semibold text-zinc-200">
+                Join Tenant
+              </h2>
+              <form className="flex flex-col gap-3" onSubmit={handleJoinTenant}>
+                <input
+                  placeholder="Invite code"
+                  value={joinCode}
+                  onChange={(e) => setJoinCode(e.target.value)}
+                  required
+                  className="w-full rounded-xl border border-zinc-700/50 bg-zinc-900/50 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
+                />
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={joinPassword}
+                  onChange={(e) => setJoinPassword(e.target.value)}
+                  required
+                  className="w-full rounded-xl border border-zinc-700/50 bg-zinc-900/50 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
+                />
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="w-full rounded-xl bg-emerald-500/90 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-emerald-400 disabled:opacity-50"
+                >
+                  {busy ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-transparent" />
+                      Joining...
+                    </span>
+                  ) : (
+                    "Join Tenant"
+                  )}
+                </button>
+              </form>
+            </motion.section>
+          </div>
         </div>
       </div>
     </main>
   );
 }
-
