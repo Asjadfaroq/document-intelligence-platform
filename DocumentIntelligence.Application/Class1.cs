@@ -1,5 +1,8 @@
 using DocumentIntelligence.Domain;
 using MediatR;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 
 namespace DocumentIntelligence.Application;
 
@@ -685,6 +688,13 @@ public class CreateTenantInviteCommandHandler : IRequestHandler<CreateTenantInvi
         _db = db;
     }
 
+    private static string HashCode(string code)
+    {
+        var bytes = Encoding.UTF8.GetBytes(code);
+        var hash = SHA256.HashData(bytes);
+        return Convert.ToHexString(hash);
+    }
+
     public async Task<string> Handle(CreateTenantInviteCommand request, CancellationToken cancellationToken)
     {
         var email = request.Email.Trim().ToLowerInvariant();
@@ -696,24 +706,23 @@ public class CreateTenantInviteCommandHandler : IRequestHandler<CreateTenantInvi
             throw new InvalidOperationException("User is already a member of this tenant.");
 
         var expiresAt = DateTime.UtcNow.AddDays(7);
-        string code;
 
-        // Simple unique code generator based on GUID; uniqueness enforced by DB index
-        do
-        {
-            code = Convert.ToBase64String(Guid.NewGuid().ToByteArray())
-                .Replace("+", string.Empty)
-                .Replace("/", string.Empty)
-                .Replace("=", string.Empty)
-                .Substring(0, 22);
-        } while (_db.TenantInvites.Any(i => i.Code == code));
+        // Generate a random invite code to give to the user
+        var rawBytes = new byte[32];
+        RandomNumberGenerator.Fill(rawBytes);
+        var rawCode = Convert.ToBase64String(rawBytes)
+            .Replace("+", string.Empty)
+            .Replace("/", string.Empty)
+            .Replace("=", string.Empty);
+
+        var codeHash = HashCode(rawCode);
 
         var invite = new TenantInvite
         {
             Id = Guid.NewGuid(),
             TenantId = request.TenantId,
             Email = email,
-            Code = code,
+            Code = codeHash,
             Role = request.Role,
             ExpiresAt = expiresAt,
             CreatedAt = DateTime.UtcNow,
@@ -723,7 +732,7 @@ public class CreateTenantInviteCommandHandler : IRequestHandler<CreateTenantInvi
         await _db.AddAsync(invite, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
 
-        return code;
+        return rawCode;
     }
 }
 
@@ -746,13 +755,21 @@ public class AcceptInviteCommandHandler : IRequestHandler<AcceptInviteCommand, A
         _refreshTokenStore = refreshTokenStore;
     }
 
+    private static string HashCode(string code)
+    {
+        var bytes = Encoding.UTF8.GetBytes(code);
+        var hash = SHA256.HashData(bytes);
+        return Convert.ToHexString(hash);
+    }
+
     public async Task<AuthResult> Handle(AcceptInviteCommand request, CancellationToken cancellationToken)
     {
         var code = request.Code.Trim();
         if (string.IsNullOrWhiteSpace(code))
             throw new UnauthorizedAccessException("Invalid invite code.");
 
-        var invite = _db.TenantInvites.FirstOrDefault(i => i.Code == code);
+        var inviteHash = HashCode(code);
+        var invite = _db.TenantInvites.FirstOrDefault(i => i.Code == inviteHash);
         if (invite is null || invite.IsUsed || invite.ExpiresAt <= DateTime.UtcNow)
             throw new UnauthorizedAccessException("Invite is invalid or expired.");
 
