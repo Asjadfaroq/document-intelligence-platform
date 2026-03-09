@@ -13,7 +13,7 @@ import {
   LineChart,
   Line,
 } from "recharts";
-import { getApiBase } from "../lib/api";
+import { getApiBase, readResponseBody, formatError, AuthResponse } from "../lib/api";
 
 type AuthMe = { tenantId: string; email: string; role: string };
 
@@ -47,6 +47,8 @@ export default function AdminPage() {
   const [overview, setOverview] = useState<TenantOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState("");
 
   const load = useCallback(async () => {
     const apiBase = getApiBase();
@@ -66,6 +68,8 @@ export default function AdminPage() {
         return;
       }
       const me = (await meRes.json()) as AuthMe;
+      setEmail(me.email);
+      setRole(me.role);
       if (me.role !== "Owner" && me.role !== "Admin") {
         setError("Access denied. This page is for Owner or Admin only.");
         setLoading(false);
@@ -94,7 +98,8 @@ export default function AdminPage() {
         return;
       }
       if (!res.ok) {
-        const text = await res.text();
+        const body = await readResponseBody(res);
+        const text = typeof body === "string" ? body : formatError(res.status, body);
         setError(text || `Request failed: ${res.status}`);
         setLoading(false);
         return;
@@ -115,7 +120,7 @@ export default function AdminPage() {
 
   if (loading && !overview) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-4 p-6">
+      <main className="flex min-h-screen items-center justify-center bg-black p-6">
         <p className="text-zinc-400">Loading admin overview…</p>
       </main>
     );
@@ -123,22 +128,26 @@ export default function AdminPage() {
 
   if (error) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-4 p-6">
-        <p className="text-amber-400">{error}</p>
-        <Link href="/" className="text-sm text-blue-400 hover:underline">
-          ← Back to home
-        </Link>
+      <main className="flex min-h-screen items-center justify-center bg-black p-6">
+        <div className="w-full max-w-lg space-y-3">
+          <p className="text-amber-400">{error}</p>
+          <Link href="/" className="text-sm text-blue-400 hover:underline">
+            ← Back to home
+          </Link>
+        </div>
       </main>
     );
   }
 
   if (!overview) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-4 p-6">
-        <p className="text-zinc-400">No data.</p>
-        <Link href="/" className="text-sm text-blue-400 hover:underline">
-          ← Back to home
-        </Link>
+      <main className="flex min-h-screen items-center justify-center bg-black p-6">
+        <div className="w-full max-w-lg space-y-3">
+          <p className="text-zinc-400">No data.</p>
+          <Link href="/" className="text-sm text-blue-400 hover:underline">
+            ← Back to home
+          </Link>
+        </div>
       </main>
     );
   }
@@ -151,18 +160,57 @@ export default function AdminPage() {
   const topDocsData = (overview.topDocumentsByUsage ?? []).map((d) => topDocMap(d));
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 p-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold">Admin – Tenant Overview</h1>
-        <Link
-          href="/"
-          className="rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm font-medium hover:bg-zinc-700"
-        >
-          ← Back to Q&A
-        </Link>
-      </div>
+    <main className="min-h-screen bg-black text-zinc-50">
+      <div className="flex min-h-screen w-full">
+        {/* Sidebar layout to match dashboard */}
+        <aside className="hidden w-64 flex-col border-r border-zinc-800 bg-zinc-950 p-4 md:flex">
+          <div className="mb-6">
+            <h1 className="text-lg font-semibold">Document Intelligence</h1>
+            <p className="mt-1 text-xs text-zinc-500">
+              {email} &middot; {role}
+            </p>
+          </div>
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <nav className="mb-4 space-y-1 text-sm">
+            <Link
+              href="/"
+              className="block rounded px-3 py-2 text-zinc-200 hover:bg-zinc-800"
+            >
+              Dashboard
+            </Link>
+            <Link
+              href="/team"
+              className="block rounded px-3 py-2 text-zinc-200 hover:bg-zinc-800"
+            >
+              Team
+            </Link>
+            <Link
+              href="/admin"
+              className="block rounded px-3 py-2 text-zinc-200 hover:bg-zinc-800"
+            >
+              Admin
+            </Link>
+          </nav>
+
+          <div className="mt-auto space-y-2 text-sm">
+            <p className="text-xs text-zinc-500">
+              Admin analytics for current tenant.
+            </p>
+          </div>
+        </aside>
+
+        <div className="flex-1 p-4 md:p-6">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <h1 className="text-2xl font-semibold">Admin – Tenant Overview</h1>
+            <Link
+              href="/"
+              className="rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm font-medium hover:bg-zinc-700"
+            >
+              ← Back to Q&A
+            </Link>
+          </div>
+
+          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded border border-zinc-700 bg-zinc-900/50 p-4">
           <p className="text-xs text-zinc-400">Total documents</p>
           <p className="text-2xl font-semibold">{overview.totalDocuments ?? 0}</p>
@@ -183,10 +231,10 @@ export default function AdminPage() {
               : "—"}
           </p>
         </div>
-      </section>
+          </section>
 
-      {questionsChartData.length > 0 && (
-        <section className="rounded border border-zinc-700 p-4">
+          {questionsChartData.length > 0 && (
+            <section className="mt-4 rounded border border-zinc-700 bg-zinc-950/40 p-4">
           <h2 className="mb-2 text-lg font-medium">Questions per day (last 30 days)</h2>
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -202,11 +250,11 @@ export default function AdminPage() {
               </LineChart>
             </ResponsiveContainer>
           </div>
-        </section>
-      )}
+            </section>
+          )}
 
-      {docsByWorkspaceData.length > 0 && (
-        <section className="rounded border border-zinc-700 p-4">
+          {docsByWorkspaceData.length > 0 && (
+            <section className="mt-4 rounded border border-zinc-700 bg-zinc-950/40 p-4">
           <h2 className="mb-2 text-lg font-medium">Documents per workspace</h2>
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -221,11 +269,11 @@ export default function AdminPage() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </section>
-      )}
+            </section>
+          )}
 
-      {topDocsData.length > 0 && (
-        <section className="rounded border border-zinc-700 p-4">
+          {topDocsData.length > 0 && (
+            <section className="mt-4 rounded border border-zinc-700 bg-zinc-950/40 p-4">
           <h2 className="mb-2 text-lg font-medium">Top documents by usage (cited in answers)</h2>
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -240,12 +288,16 @@ export default function AdminPage() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </section>
-      )}
+            </section>
+          )}
 
-      {questionsChartData.length === 0 && docsByWorkspaceData.length === 0 && topDocsData.length === 0 && (
-        <p className="text-sm text-zinc-400">No chart data yet. Upload documents and ask questions to see stats.</p>
-      )}
+          {questionsChartData.length === 0 && docsByWorkspaceData.length === 0 && topDocsData.length === 0 && (
+            <p className="mt-4 text-sm text-zinc-400">
+              No chart data yet. Upload documents and ask questions to see stats.
+            </p>
+          )}
+        </div>
+      </div>
     </main>
   );
 }
