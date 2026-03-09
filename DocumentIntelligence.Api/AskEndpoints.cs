@@ -11,8 +11,7 @@ public static class AskEndpoints
     public static IEndpointRouteBuilder MapAsk(this IEndpointRouteBuilder routes)
     {
         var group = routes.MapGroup("/workspaces/{workspaceId:guid}/ask")
-            .RequireAuthorization("TenantUser")
-            .RequireRateLimiting("ask-rl");
+            .RequireAuthorization("TenantUser");
 
         group.MapPost(string.Empty, async (
             Guid workspaceId,
@@ -20,6 +19,7 @@ public static class AskEndpoints
             ClaimsPrincipal user,
             IMediator mediator,
             IWorkspaceAccessService workspaceAccessService,
+            IRateLimitService rateLimit,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
@@ -27,6 +27,16 @@ public static class AskEndpoints
             var userId = user.GetUserId();
             if (tenantId == null || userId == null)
                 return Results.Unauthorized();
+
+            var log = loggerFactory.CreateLogger("DocumentIntelligence.Ask");
+
+            // Redis-backed rate limiting: 3 questions per 30 seconds per user+tenant
+            var clientKey = $"{tenantId}:{userId}";
+            if (!await rateLimit.AllowAsync("ask", clientKey, 3, 30, ct))
+            {
+                log.LogWarning("Ask rate limited: Key={Key}", clientKey);
+                return Results.Json(new { title = "Too many questions. Please wait a bit and try again.", status = 429 }, statusCode: 429);
+            }
 
             if (!await workspaceAccessService.WorkspaceBelongsToTenantAsync(workspaceId, tenantId.Value, ct))
             {
@@ -52,8 +62,6 @@ public static class AskEndpoints
                 languageHint);
 
             var result = await mediator.Send(command, ct);
-
-            var log = loggerFactory.CreateLogger("DocumentIntelligence.Ask");
             log.LogInformation(
                 "Ask completed: WorkspaceId={WorkspaceId}, TenantId={TenantId}, LatencyMs={LatencyMs}, SourceCount={SourceCount}",
                 workspaceId, tenantId.Value, result.LatencyMs, result.Sources.Count);
