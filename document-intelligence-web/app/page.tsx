@@ -631,7 +631,7 @@ export default function Home() {
             <button
               type="button"
               onClick={handleLogout}
-              className="w-full rounded px-2 py-1.5 text-left text-xs text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-200"
+              className="w-full rounded-lg px-2.5 py-1.5 text-left text-xs text-red-400 transition-colors hover:bg-red-500/10 hover:text-red-300"
             >
               {locale === "ar" ? "تسجيل الخروج" : "Logout"}
             </button>
@@ -807,7 +807,7 @@ export default function Home() {
                       <button
                         type="button"
                         onClick={() => setDeleteDocumentId(document.id)}
-                        className="ml-0.5 rounded p-0.5 text-zinc-500 hover:bg-zinc-700/60 hover:text-red-400"
+                        className="ml-0.5 rounded p-0.5 text-red-400 transition-colors hover:bg-red-500/20 hover:text-red-300"
                         title={locale === "ar" ? "حذف" : "Delete"}
                         aria-label="Delete document"
                       >

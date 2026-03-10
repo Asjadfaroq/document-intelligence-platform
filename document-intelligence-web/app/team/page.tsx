@@ -415,7 +415,7 @@ export default function TeamPage() {
             <button
               type="button"
               onClick={handleLogout}
-              className="w-full rounded px-2 py-1.5 text-left text-xs text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-200"
+              className="w-full rounded-lg px-2.5 py-1.5 text-left text-xs text-red-400 transition-colors hover:bg-red-500/10 hover:text-red-300"
             >
               Logout
             </button>
@@ -641,7 +641,7 @@ export default function TeamPage() {
                             <button
                               type="button"
                               onClick={() => setDeleteWorkspaceId(w.id)}
-                              className="shrink-0 rounded-md border border-zinc-600/60 px-2.5 py-1 text-[11px] font-medium text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-300"
+                              className="shrink-0 rounded-md border border-red-500/50 px-2.5 py-1 text-[11px] font-medium text-red-400 transition-colors hover:bg-red-500/10 hover:border-red-400/60 hover:text-red-300"
                             >
                               Delete
                             </button>
@@ -658,7 +658,7 @@ export default function TeamPage() {
                     <button
                       type="button"
                       onClick={() => setShowDeleteTenantModal(true)}
-                      className="rounded-md border border-zinc-600/60 px-3 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-300"
+                      className="rounded-md border border-red-500/50 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/10 hover:border-red-400/60 hover:text-red-300"
                     >
                       Delete tenant
                     </button>
