@@ -120,6 +120,13 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const questionTextAreaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, [sidebarOpen]);
   const isLoggedIn = Boolean(role);
 
   const canCallApi = useMemo(
@@ -542,19 +549,15 @@ export default function Home() {
   return (
     <main className="app-dark-bg app-grid min-h-dvh text-zinc-50 md:min-h-screen" dir={dir}>
       <div className="flex min-h-dvh w-full overflow-hidden md:min-h-screen">
-        {/* Mobile: backdrop when sidebar open */}
-        {sidebarOpen && (
-          <div
-            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
-            onClick={() => setSidebarOpen(false)}
-            aria-hidden="true"
-          />
-        )}
+        {/* Mobile drawer overlay — always in DOM for smooth transition; no backdrop-blur */}
+        <div
+          className={`drawer-overlay md:hidden ${sidebarOpen ? "is-open" : ""}`}
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden={!sidebarOpen}
+        />
         {/* Sidebar: drawer on mobile, inline on desktop */}
         <aside
-          className={`glass-surface fixed inset-y-0 left-0 z-50 flex w-64 max-w-[85vw] flex-col border-r border-zinc-800/40 p-3 transition-transform duration-300 ease-out md:relative md:inset-auto md:z-auto md:w-56 md:max-w-none md:flex-shrink-0 md:translate-x-0 ${
-            sidebarOpen ? "translate-x-0" : "-translate-x-full"
-          }`}
+          className={`drawer-panel flex flex-col overflow-y-auto p-3 md:flex-shrink-0 ${sidebarOpen ? "is-open" : ""}`}
         >
           <h1 className="mb-4 text-sm font-semibold tracking-tight text-zinc-100">
             {locale === "ar" ? "الذكاء المستندي" : "Doc Intelligence"}
@@ -653,7 +656,7 @@ export default function Home() {
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35, delay: 0.05, ease: [0.16, 1, 0.3, 1] }}
-          className="flex min-h-0 flex-1 flex-col p-2 sm:p-3 md:p-4"
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden p-2 sm:p-3 md:p-4"
         >
           {/* Mobile header with hamburger */}
           <header className="mb-2 flex items-center justify-between gap-2 sm:mb-3">
@@ -700,7 +703,7 @@ export default function Home() {
             confirmValue="DELETE"
           />
 
-          <section className="glass-surface flex min-h-0 flex-1 flex-col rounded-xl border border-zinc-700/30 shadow-xl shadow-black/20 sm:rounded-2xl">
+          <section className="glass-surface flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-zinc-700/30 shadow-xl shadow-black/20 sm:rounded-2xl">
             {/* Compact upload bar */}
             <form
               onSubmit={handleUpload}
@@ -712,7 +715,7 @@ export default function Home() {
                 const file = e.dataTransfer.files?.[0];
                 if (file?.type === "application/pdf") setUploadFile(file);
               }}
-              className={`flex flex-wrap items-center gap-2 border-b border-zinc-700/30 px-2 py-2 transition-colors sm:flex-nowrap sm:gap-2 sm:px-3 sm:py-2.5 ${
+              className={`flex flex-wrap items-center gap-2 border-b border-zinc-700/30 px-2 py-2 transition-colors sm:flex-nowrap sm:px-3 sm:py-2.5 ${
                 dragActive ? "bg-indigo-500/5" : ""
               }`}
             >
@@ -725,7 +728,7 @@ export default function Home() {
               />
               <label
                 htmlFor="pdf-upload-input"
-                className="flex cursor-pointer items-center gap-2 rounded-lg border border-zinc-600/40 bg-zinc-800/40 px-2.5 py-1.5 text-[11px] text-zinc-400 transition-colors hover:border-zinc-500 hover:bg-zinc-700/40 hover:text-zinc-200"
+                className="flex shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-zinc-600/40 bg-zinc-800/40 px-2.5 py-1.5 text-[11px] text-zinc-400 transition-colors hover:border-zinc-500 hover:bg-zinc-700/40 hover:text-zinc-200"
               >
                 <span>📄</span>
                 {uploadFile ? (
@@ -772,7 +775,7 @@ export default function Home() {
                 disabled={busyUpload || !uploadFile}
                 animate={uploadJustSucceeded ? { scale: [1, 1.05, 1] } : {}}
                 transition={{ duration: 0.3 }}
-                className={`ml-auto flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-white transition-all duration-300 ${
+                className={`ml-auto flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-white transition-all duration-300 ${
                   uploadJustSucceeded
                     ? "bg-emerald-500 shadow-md shadow-emerald-500/30"
                     : "bg-indigo-600/80 hover:bg-indigo-500 disabled:opacity-50"
@@ -885,10 +888,10 @@ export default function Home() {
                       void ask(question);
                     }}
                   >
-                    <div className="input-glow flex flex-col items-stretch gap-2 rounded-xl border border-zinc-600/40 bg-zinc-900/60 px-3 py-2.5 shadow-lg transition-all duration-200 focus-within:border-indigo-500/50 focus-within:bg-zinc-900/80 sm:flex-row sm:items-center sm:gap-3 sm:rounded-2xl sm:px-4 sm:py-3.5">
+                    <div className="input-glow flex items-center gap-2 rounded-xl border border-zinc-600/40 bg-zinc-900/60 px-3 py-2 shadow-lg transition-all duration-200 focus-within:border-indigo-500/50 focus-within:bg-zinc-900/80 sm:gap-3 sm:rounded-2xl sm:px-4 sm:py-3">
                       <button
                         type="button"
-                        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-800/50 hover:text-zinc-300"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-800/50 hover:text-zinc-300"
                         title={locale === "ar" ? "إرفاق PDF" : "Attach PDF"}
                         onClick={() => document.getElementById("pdf-upload-input")?.click()}
                       >
@@ -896,13 +899,13 @@ export default function Home() {
                       </button>
                       <textarea
                         ref={questionTextAreaRef}
-                        className="min-h-[24px] max-h-32 flex-1 resize-none bg-transparent text-[14px] text-zinc-100 placeholder:text-zinc-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                        className="min-h-[24px] max-h-32 flex-1 resize-none bg-transparent text-[14px] leading-[1.5] text-zinc-100 placeholder:text-zinc-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 sm:text-[14px]"
                         placeholder={locale === "ar" ? "اكتب سؤالك هنا..." : "Type your question here..."}
                         value={question}
                         onChange={(e) => setQuestion(e.target.value)}
                         disabled={busyAsk}
                       />
-                      <div className="relative flex flex-shrink-0 flex-wrap items-center justify-end gap-1 sm:flex-nowrap">
+                      <div className="relative flex shrink-0 items-center gap-1">
                         <button
                           type="button"
                           className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-800/50 hover:text-zinc-300"
@@ -963,7 +966,7 @@ export default function Home() {
                         <button
                           type="submit"
                           disabled={busyAsk || !workspaceId || !question.trim()}
-                          className="flex h-8 items-center justify-center rounded-lg bg-indigo-500 px-4 text-[12px] font-medium text-white shadow-lg shadow-indigo-500/20 transition-all hover:bg-indigo-400 disabled:opacity-50"
+                          className="flex h-8 items-center justify-center rounded-lg bg-indigo-500 px-3 text-[12px] font-medium text-white shadow-lg shadow-indigo-500/20 transition-all hover:bg-indigo-400 disabled:opacity-50 sm:px-4"
                         >
                           {busyAsk ? (
                             <span className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent" />
@@ -1057,7 +1060,7 @@ export default function Home() {
               {/* Sticky input (only when chat has messages) */}
               {chat.length > 0 && (
               <form
-                className="mt-auto flex flex-col gap-2 border-t border-zinc-700/30 bg-zinc-900/20 px-2 pt-3 sm:flex-row sm:items-end sm:px-0"
+                className="mt-auto flex items-center gap-2 border-t border-zinc-700/30 bg-zinc-900/20 px-2 pb-[env(safe-area-inset-bottom)] pt-3 sm:gap-3 sm:px-0"
                 onSubmit={(e) => {
                   e.preventDefault();
                   void ask(question);
@@ -1065,7 +1068,7 @@ export default function Home() {
               >
                 <button
                   type="button"
-                  className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-800/50 hover:text-zinc-300"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-800/50 hover:text-zinc-300"
                   title={locale === "ar" ? "إرفاق PDF" : "Attach PDF"}
                   onClick={() => document.getElementById("pdf-upload-input")?.click()}
                 >
@@ -1073,7 +1076,7 @@ export default function Home() {
                 </button>
                 <textarea
                   ref={questionTextAreaRef}
-                  className="min-h-[44px] max-h-24 flex-1 resize-none rounded-xl border border-zinc-600/40 bg-zinc-800/50 px-3 py-2 text-[13px] text-zinc-100 placeholder:text-zinc-500 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/30 transition-colors disabled:cursor-not-allowed disabled:opacity-60 sm:min-h-[36px]"
+                  className="min-h-[36px] max-h-24 flex-1 resize-none rounded-xl border border-zinc-600/40 bg-zinc-800/50 px-3 py-2 text-[14px] leading-[1.5] text-zinc-100 placeholder:text-zinc-500 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/30 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
                   placeholder={locale === "ar" ? "اسأل عن مستنداتك..." : "Ask about your documents..."}
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
@@ -1140,7 +1143,7 @@ export default function Home() {
                   <button
                     type="submit"
                     disabled={busyAsk || !workspaceId || !question.trim()}
-                    className="flex h-8 items-center justify-center rounded-lg bg-indigo-500 px-3 text-[12px] font-medium text-white shadow-lg shadow-indigo-500/20 transition-all hover:bg-indigo-400 disabled:opacity-50"
+                    className="flex h-8 items-center justify-center rounded-lg bg-indigo-500 px-3 text-[12px] font-medium text-white shadow-lg shadow-indigo-500/20 transition-all hover:bg-indigo-400 disabled:opacity-50 sm:px-4"
                   >
                     {busyAsk ? (
                       <span className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent" />

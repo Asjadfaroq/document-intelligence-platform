@@ -97,6 +97,13 @@ export default function AdminPage() {
   const [role, setRole] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, [sidebarOpen]);
+
   const load = useCallback(async () => {
     const apiBase = getApiBase();
     setError(null);
@@ -251,17 +258,13 @@ export default function AdminPage() {
   return (
     <main className="app-dark-bg app-grid h-dvh overflow-hidden text-zinc-50 md:h-screen">
       <div className="flex h-full w-full min-h-0">
-        {sidebarOpen && (
-          <div
-            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
-            onClick={() => setSidebarOpen(false)}
-            aria-hidden="true"
-          />
-        )}
+        <div
+          className={`drawer-overlay md:hidden ${sidebarOpen ? "is-open" : ""}`}
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden={!sidebarOpen}
+        />
         <aside
-          className={`glass-surface fixed inset-y-0 left-0 z-50 flex w-64 max-w-[85vw] flex-col border-r border-zinc-800/40 p-3 transition-transform duration-300 ease-out md:relative md:inset-auto md:z-auto md:h-full md:w-56 md:max-w-none md:flex-shrink-0 md:translate-x-0 ${
-            sidebarOpen ? "translate-x-0" : "-translate-x-full"
-          }`}
+          className={`drawer-panel flex flex-col overflow-y-auto p-3 md:flex-shrink-0 md:h-full ${sidebarOpen ? "is-open" : ""}`}
         >
           <h1 className="mb-4 text-sm font-semibold tracking-tight text-zinc-100">Doc Intelligence</h1>
           <nav className="space-y-0.5 border-t border-zinc-800/50 pt-3">

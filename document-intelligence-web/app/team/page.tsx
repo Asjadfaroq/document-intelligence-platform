@@ -72,6 +72,13 @@ export default function TeamPage() {
   const [showDeleteTenantModal, setShowDeleteTenantModal] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, [sidebarOpen]);
+
   const isLoggedIn = Boolean(role);
   const isOwner = role === "Owner";
 
@@ -354,17 +361,13 @@ export default function TeamPage() {
   return (
     <main className="app-dark-bg app-grid min-h-dvh text-zinc-50 md:min-h-screen">
       <div className="flex min-h-dvh w-full md:min-h-screen">
-        {sidebarOpen && (
-          <div
-            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
-            onClick={() => setSidebarOpen(false)}
-            aria-hidden="true"
-          />
-        )}
+        <div
+          className={`drawer-overlay md:hidden ${sidebarOpen ? "is-open" : ""}`}
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden={!sidebarOpen}
+        />
         <aside
-          className={`glass-surface fixed inset-y-0 left-0 z-50 flex w-64 max-w-[85vw] flex-col border-r border-zinc-800/40 p-3 transition-transform duration-300 ease-out md:relative md:inset-auto md:z-auto md:w-56 md:max-w-none md:flex-shrink-0 md:translate-x-0 ${
-            sidebarOpen ? "translate-x-0" : "-translate-x-full"
-          }`}
+          className={`drawer-panel flex flex-col overflow-y-auto p-3 md:flex-shrink-0 ${sidebarOpen ? "is-open" : ""}`}
         >
           <h1 className="mb-4 text-sm font-semibold tracking-tight text-zinc-100">
             Doc Intelligence

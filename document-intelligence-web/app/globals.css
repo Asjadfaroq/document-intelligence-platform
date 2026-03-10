@@ -25,6 +25,7 @@
 
 html {
   -webkit-tap-highlight-color: transparent;
+  overflow-x: hidden;
 }
 
 body {
@@ -52,12 +53,64 @@ body {
   background-size: 48px 48px;
 }
 
-/* Glass surface with subtle entrance */
+/* Glass surface with subtle entrance — desktop only; mobile uses solid bg for stability */
 .glass-surface {
   background: rgba(9, 9, 11, 0.7);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   transition: box-shadow 0.3s var(--ease-in-out-smooth);
+}
+
+/* Mobile drawer overlay — no backdrop-filter to avoid flicker/blur on mobile */
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background-color: rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease-out;
+}
+.drawer-overlay.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Mobile drawer panel — solid background for stable rendering; no backdrop-filter */
+.drawer-panel {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 50;
+  width: 16rem;
+  max-width: 85vw;
+  background-color: rgb(9, 9, 11);
+  border-right: 1px solid rgba(39, 39, 42, 0.4);
+  transform: translateX(-100%);
+  transition: transform 0.25s cubic-bezier(0.32, 0.72, 0, 1);
+  will-change: transform;
+}
+.drawer-panel.is-open {
+  transform: translateX(0);
+}
+@media (min-width: 768px) {
+  .drawer-panel {
+    position: relative;
+    top: auto;
+    bottom: auto;
+    left: auto;
+    width: 14rem;
+    max-width: none;
+    transform: none;
+    will-change: auto;
+    background: rgba(9, 9, 11, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  .drawer-panel.is-open {
+    transform: none;
+  }
 }
 
 /* Input focus glow */
