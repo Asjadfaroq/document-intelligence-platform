@@ -519,20 +519,14 @@ public class HuggingFaceEmbeddingService : IEmbeddingService
         _configuration = configuration;
     }
 
-    /// <summary>Strips control characters (e.g. \r from Windows .env) so values are safe for headers/URLs.</summary>
-    private static string SanitizeHfConfig(string value) =>
-        string.IsNullOrEmpty(value) ? value : string.Concat(value.Trim().Where(c => !char.IsControl(c)));
-
     public async Task<float[]> GetEmbeddingAsync(string text, CancellationToken cancellationToken)
     {
-        var apiKey = SanitizeHfConfig(_configuration["HUGGINGFACE_API_KEY"] ?? throw new InvalidOperationException("HUGGINGFACE_API_KEY not configured."));
-        var model = SanitizeHfConfig(_configuration["HUGGINGFACE_EMBEDDING_MODEL"]
+        var apiKey = ConfigHelpers.Sanitize(_configuration["HUGGINGFACE_API_KEY"] ?? throw new InvalidOperationException("HUGGINGFACE_API_KEY not configured."));
+        var model = ConfigHelpers.Sanitize(_configuration["HUGGINGFACE_EMBEDDING_MODEL"]
                     ?? throw new InvalidOperationException("HUGGINGFACE_EMBEDDING_MODEL not set."));
         var dim = int.Parse(_configuration["EMBEDDING_DIMENSION"] ?? "384", CultureInfo.InvariantCulture);
 
-        var request = new HttpRequestMessage(
-            HttpMethod.Post,
-            $"https://router.huggingface.co/hf-inference/models/{model}/pipeline/feature-extraction");
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/hf-inference/models/{model}/pipeline/feature-extraction");
 
         request.Headers.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
@@ -584,84 +578,32 @@ public class HuggingFaceLLMClient : ILLMClient
         _configuration = configuration;
     }
 
-    /// <summary>Strips control characters (e.g. \r from Windows .env) so values are safe for headers/URLs.</summary>
-    private static string SanitizeHfConfig(string value) =>
-        string.IsNullOrEmpty(value) ? value : string.Concat(value.Trim().Where(c => !char.IsControl(c)));
-
     public async Task<string> GenerateAnswerAsync(string question, string context, string? languageHint, CancellationToken cancellationToken)
     {
-        var apiKey = SanitizeHfConfig(_configuration["HUGGINGFACE_API_KEY"]
-            ?? throw new InvalidOperationException("HUGGINGFACE_API_KEY not set."));
-        var model = SanitizeHfConfig(_configuration["HUGGINGFACE_LLM_MODEL"]
-            ?? throw new InvalidOperationException("HUGGINGFACE_LLM_MODEL not set."));
+        var apiKey = ConfigHelpers.Sanitize(_configuration["HUGGINGFACE_API_KEY"] ?? throw new InvalidOperationException("HUGGINGFACE_API_KEY not set."));
+        var model = ConfigHelpers.Sanitize(_configuration["HUGGINGFACE_LLM_MODEL"] ?? throw new InvalidOperationException("HUGGINGFACE_LLM_MODEL not set."));
 
-        var languageInstruction = string.IsNullOrWhiteSpace(languageHint)
-            ? ""
-            : languageHint.Trim().Equals("ar", StringComparison.OrdinalIgnoreCase)
-                ? " Answer in Arabic only."
-                : " Answer in English only.";
+        var prompt = RagPrompt.BuildSystemContent(languageHint) + "\n\nContext:\n" + context + "\n\nQuestion: " + question + "\n\nAnswer:";
 
-        var prompt = "You are a precise document Q&A assistant for any document type (contracts, reports, invoices, manuals, research, etc.). Answer ONLY using the provided context.\n\n" +
-            "CRITICAL: Base your answer strictly on the context below. Do not infer, assume, or fabricate. " +
-            "If the information is NOT in the context, say you could not find it. Never state that something is absent; " +
-            "only say you could not find it in the given context.\n\n" +
-            "For lists and structured data (entities, amounts, clauses, dates, etc.): include ALL relevant matches from the context. Do not omit any item.\n" +
-            "For yes/no questions: answer only Yes or No based on explicit evidence in the context.\n" +
-            languageInstruction + "\n\nContext:\n" + context + "\n\nQuestion: " + question + "\n\nAnswer:";
+        var payload = new { model, messages = new[] { new { role = "user", content = prompt } }, max_tokens = 512, temperature = 0.15 };
 
-        var payload = new
-        {
-            model = model,
-            messages = new[]
-            {
-                new { role = "user", content = prompt }
-            },
-            max_tokens = 512,
-            temperature = 0.15
-        };
-
-        // Use Responses API: https://router.huggingface.co/v1 (model in body, not URL)
-        var request = new HttpRequestMessage(
-            HttpMethod.Post,
-            "https://router.huggingface.co/v1/chat/completions");
-
-        request.Headers.Authorization =
-            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-
-        request.Content = new StringContent(
-            System.Text.Json.JsonSerializer.Serialize(payload),
-            Encoding.UTF8,
-            "application/json");
+        var request = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions");
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+        request.Content = new StringContent(System.Text.Json.JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
         var response = await _httpClient.SendAsync(request, cancellationToken);
         var json = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {
-            // Give a clear fix when no Inference Provider is enabled
             if (response.StatusCode == System.Net.HttpStatusCode.BadRequest && json.Contains("model_not_supported", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException(
-                    "Hugging Face model is not available: enable at least one Inference Provider in your account at https://hf.co/settings/inference-providers (e.g. HF Inference or Groq), then retry.");
-            }
-            // User-friendly message when API credits are exhausted
-            if (response.StatusCode == System.Net.HttpStatusCode.PaymentRequired ||
-                json.Contains("depleted your monthly", StringComparison.OrdinalIgnoreCase) ||
-                json.Contains("depleted", StringComparison.OrdinalIgnoreCase) && json.Contains("credits", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException(
-                    "HUGGINGFACE_CREDITS_EXHAUSTED: AI service credits are out of stock. Please try again later or contact your administrator.");
-            }
-            throw new InvalidOperationException(
-                $"HuggingFace LLM error ({response.StatusCode}): {json}");
+                throw new InvalidOperationException("Hugging Face model is not available: enable at least one Inference Provider at https://hf.co/settings/inference-providers.");
+            if (response.StatusCode == System.Net.HttpStatusCode.PaymentRequired || (json.Contains("depleted", StringComparison.OrdinalIgnoreCase) && json.Contains("credits", StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException("HUGGINGFACE_CREDITS_EXHAUSTED: AI service credits are out of stock. Please try again later.");
+            throw new InvalidOperationException($"HuggingFace LLM error ({response.StatusCode}): {json}");
         }
 
-        using var doc = System.Text.Json.JsonDocument.Parse(json);
-        return doc.RootElement
-            .GetProperty("choices")[0]
-            .GetProperty("message")
-            .GetProperty("content")
-            .GetString()?.Trim() ?? string.Empty;
+        return OpenAiChatResponse.ParseContent(json);
     }
 }
 

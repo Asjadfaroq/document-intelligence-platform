@@ -120,8 +120,9 @@ builder.Services.AddHttpClient<IStorageService, SupabaseStorageService>();
 var embeddingProvider = (builder.Configuration["EMBEDDING_PROVIDER"] ?? "huggingface").Trim().ToLowerInvariant();
 if (embeddingProvider == "huggingface")
 {
-    builder.Services.AddHttpClient<IEmbeddingService, HuggingFaceEmbeddingService>()
-        .AddPolicyHandler(HttpClientPolicies.CreateRetryPolicy("hf-embedding"));
+    builder.Services.AddHttpClient<IEmbeddingService, HuggingFaceEmbeddingService>(client =>
+        client.BaseAddress = new Uri("https://router.huggingface.co"))
+    .AddPolicyHandler(HttpClientPolicies.CreateRetryPolicy());
 }
 else
 {
@@ -132,13 +133,18 @@ else
 var llmProvider = (builder.Configuration["LLM_PROVIDER"] ?? "groq").Trim().ToLowerInvariant();
 if (llmProvider == "groq")
 {
-    builder.Services.AddHttpClient<ILLMClient, GroqLLMClient>()
-        .AddPolicyHandler(HttpClientPolicies.CreateRetryPolicy("groq-llm"));
+    builder.Services.AddHttpClient<ILLMClient, GroqLLMClient>(client =>
+    {
+        var baseUrl = (builder.Configuration["GROQ_BASE_URL"] ?? "https://api.groq.com/openai/v1").Trim().TrimEnd('/');
+        client.BaseAddress = new Uri(baseUrl + "/");
+    })
+    .AddPolicyHandler(HttpClientPolicies.CreateRetryPolicy());
 }
 else if (llmProvider == "huggingface")
 {
-    builder.Services.AddHttpClient<ILLMClient, HuggingFaceLLMClient>()
-        .AddPolicyHandler(HttpClientPolicies.CreateRetryPolicy("hf-llm"));
+    builder.Services.AddHttpClient<ILLMClient, HuggingFaceLLMClient>(client =>
+        client.BaseAddress = new Uri("https://router.huggingface.co"))
+    .AddPolicyHandler(HttpClientPolicies.CreateRetryPolicy());
 }
 else
 {
@@ -156,7 +162,7 @@ var jwtSecret = builder.Configuration["Jwt:Secret"] ?? builder.Configuration["Jw
 var hasJwtAuth = !string.IsNullOrWhiteSpace(jwtSecret);
 if (hasJwtAuth)
 {
-    var key = Encoding.UTF8.GetBytes(jwtSecret);
+    var key = Encoding.UTF8.GetBytes(jwtSecret!);
 
     builder.Services.AddAuthentication(options =>
         {

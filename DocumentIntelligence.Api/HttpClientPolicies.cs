@@ -7,7 +7,7 @@ namespace DocumentIntelligence.Api;
 
 internal static class HttpClientPolicies
 {
-    public static IAsyncPolicy<HttpResponseMessage> CreateRetryPolicy(string clientName)
+    public static IAsyncPolicy<HttpResponseMessage> CreateRetryPolicy()
     {
         // Consider HTTP 5xx, 408, network failures, and 429 as transient.
         var transientHttpErrorPolicy = HttpPolicyExtensions

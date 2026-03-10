@@ -618,15 +618,13 @@ public class AskQuestionCommandHandler : IRequestHandler<AskQuestionCommand, Ask
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var questionEmbedding = await _embeddings.GetEmbeddingAsync(request.Question, cancellationToken);
-
-        var topK = request.TopK <= 0 ? 8 : Math.Min(request.TopK, 15);
         var chunks = await _vectorSearch.SearchChunksAsync(
             request.TenantId,
             request.WorkspaceId,
             questionEmbedding,
             request.Question,
             request.Mode,
-            topK,
+            request.TopK,
             cancellationToken);
 
         // Log retrieved chunks for debugging and recall verification (enable "DocumentIntelligence.Application": "Debug" in appsettings)
@@ -641,7 +639,7 @@ public class AskQuestionCommandHandler : IRequestHandler<AskQuestionCommand, Ask
                 "RAG retrieval: Q=\"{Question}\" Mode={Mode} TopK={TopK} Retrieved={Count}. Chunks: {ChunkSummary}",
                 request.Question.Length > 100 ? request.Question[..100] + "..." : request.Question,
                 request.Mode,
-                topK,
+                request.TopK,
                 chunks.Count,
                 chunkSummary);
         }
