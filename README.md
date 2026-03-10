@@ -28,11 +28,11 @@ Doc Intelligence is a full-stack application that lets you upload documents, chu
 
 <br/><br/>
 
-<img src="assets/fillchat.png" alt="Doc Intelligence – Filled chat conversation" width="800" />
+<img src="assets/chat.png" alt="Doc Intelligence – Chat over documents" width="800" />
 
 <br/><br/>
 
-<img src="assets/chat.png" alt="Doc Intelligence – Chat over documents" width="800" />
+<img src="assets/fillchat.png" alt="Doc Intelligence – Filled chat conversation" width="800" />
 
 <br/><br/>
 
