@@ -61,7 +61,7 @@ export default function SignInPage() {
   }
 
   return (
-    <main className="app-dark-bg app-grid mx-auto flex min-h-screen w-full max-w-md flex-col justify-center gap-6 p-6">
+    <main className="app-dark-bg app-grid mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-6 p-4 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] sm:p-6">
       <h1 className="text-2xl font-semibold text-zinc-100">Sign In</h1>
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
         <input

@@ -63,11 +63,11 @@ export default function SignUpPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center gap-6 p-6">
-      <h1 className="text-2xl font-semibold">Create Account</h1>
+    <main className="app-dark-bg app-grid mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-6 p-4 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] sm:p-6">
+      <h1 className="text-2xl font-semibold text-zinc-100">Create Account</h1>
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
         <input
-          className="rounded border border-zinc-600 bg-transparent p-2"
+          className="rounded-lg border border-zinc-600/80 bg-zinc-800/50 px-3 py-2.5 text-zinc-100 placeholder-zinc-500 transition-colors focus:border-indigo-500/60 focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
           type="email"
           placeholder="Email"
           value={email}
@@ -75,7 +75,7 @@ export default function SignUpPage() {
           required
         />
         <input
-          className="rounded border border-zinc-600 bg-transparent p-2"
+          className="rounded-lg border border-zinc-600/80 bg-zinc-800/50 px-3 py-2.5 text-zinc-100 placeholder-zinc-500 transition-colors focus:border-indigo-500/60 focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
           type="password"
           placeholder="Password"
           value={password}
@@ -83,7 +83,7 @@ export default function SignUpPage() {
           required
         />
         <input
-          className="rounded border border-zinc-600 bg-transparent p-2"
+          className="rounded-lg border border-zinc-600/80 bg-zinc-800/50 px-3 py-2.5 text-zinc-100 placeholder-zinc-500 transition-colors focus:border-indigo-500/60 focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
           type="password"
           placeholder="Confirm password"
           value={confirmPassword}
@@ -91,7 +91,7 @@ export default function SignUpPage() {
           required
         />
         <button
-          className="rounded bg-indigo-600 p-2 font-medium text-white disabled:opacity-60"
+          className="rounded-lg bg-indigo-600 px-4 py-2.5 font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-60"
           type="submit"
           disabled={busy}
         >

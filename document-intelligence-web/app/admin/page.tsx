@@ -95,6 +95,7 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const load = useCallback(async () => {
     const apiBase = getApiBase();
@@ -248,14 +249,25 @@ export default function AdminPage() {
   }
 
   return (
-    <main className="app-dark-bg app-grid h-screen overflow-hidden text-zinc-50">
+    <main className="app-dark-bg app-grid min-h-dvh overflow-hidden text-zinc-50 md:min-h-screen">
       <div className="flex h-full w-full min-h-0">
-        <aside className="glass-surface hidden w-56 flex-shrink-0 flex-col border-r border-zinc-800/40 p-3 md:flex">
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
+            onClick={() => setSidebarOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+        <aside
+          className={`glass-surface fixed inset-y-0 left-0 z-50 flex w-64 max-w-[85vw] flex-col border-r border-zinc-800/40 p-3 transition-transform duration-300 ease-out md:relative md:inset-auto md:z-auto md:w-56 md:max-w-none md:flex-shrink-0 md:translate-x-0 ${
+            sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
+        >
           <h1 className="mb-4 text-sm font-semibold tracking-tight text-zinc-100">Doc Intelligence</h1>
           <nav className="space-y-0.5 border-t border-zinc-800/50 pt-3">
-            <Link href="/" className="block rounded px-2 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200">Dashboard</Link>
-            <Link href="/team" className="block rounded px-2 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200">Team</Link>
-            <Link href="/admin" className="block rounded px-2 py-1.5 text-xs text-zinc-200 bg-zinc-800/50">Admin</Link>
+            <Link href="/" className="block rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200" onClick={() => setSidebarOpen(false)}>Dashboard</Link>
+            <Link href="/team" className="block rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200" onClick={() => setSidebarOpen(false)}>Team</Link>
+            <Link href="/admin" className="block rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 bg-zinc-800/50" onClick={() => setSidebarOpen(false)}>Admin</Link>
           </nav>
           <div className="mt-auto border-t border-zinc-800/50 pt-3">
             <p className="mb-1 px-2 text-[10px] text-zinc-500">{email}</p>
@@ -263,17 +275,30 @@ export default function AdminPage() {
           </div>
         </aside>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3 md:p-4">
-          <div className="mb-2 flex flex-shrink-0 flex-wrap items-center justify-between gap-2">
-            <div>
-              <h1 className="text-base font-semibold tracking-tight text-zinc-100">Analytics</h1>
-              <p className="text-[11px] text-zinc-500">Tenant overview and usage metrics</p>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div className="mb-2 flex flex-shrink-0 flex-wrap items-center justify-between gap-2 border-b border-zinc-800/40 p-3 md:border-b-0 md:p-3 md:pb-2">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(true)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200 md:hidden"
+                aria-label="Open menu"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+              <div>
+                <h1 className="text-base font-semibold tracking-tight text-zinc-100 sm:text-lg">Analytics</h1>
+                <p className="text-[11px] text-zinc-500">Tenant overview and usage metrics</p>
+              </div>
             </div>
-            <Link href="/" className="rounded-xl border border-zinc-700/50 bg-zinc-900/50 px-4 py-2 text-sm font-medium text-zinc-200 transition-colors hover:border-zinc-600 hover:bg-zinc-800/50">
+            <Link href="/" className="rounded-xl border border-zinc-700/50 bg-zinc-900/50 px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:border-zinc-600 hover:bg-zinc-800/50 sm:px-4">
               ← Back to Chat
             </Link>
           </div>
 
+          <div className="overflow-y-auto px-3 pb-4 md:px-4">
           <div className="mb-2 grid flex-shrink-0 gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {kpis.map((kpi) => (
               <div key={kpi.label} className="glass-surface rounded-xl border border-zinc-800/40 p-3 shadow-lg">
@@ -399,6 +424,7 @@ export default function AdminPage() {
               )}
             </div>
           </section>
+          </div>
         </div>
       </div>
     </main>

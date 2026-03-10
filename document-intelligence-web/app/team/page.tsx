@@ -69,6 +69,7 @@ export default function TeamPage() {
   const [busy, setBusy] = useState(false);
   const [deleteWorkspaceId, setDeleteWorkspaceId] = useState<string | null>(null);
   const [showDeleteTenantModal, setShowDeleteTenantModal] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const isLoggedIn = Boolean(role);
   const isOwner = role === "Owner";
@@ -350,10 +351,20 @@ export default function TeamPage() {
   }
 
   return (
-    <main className="app-dark-bg app-grid min-h-screen text-zinc-50">
-      <div className="flex min-h-screen w-full">
-        {/* Sidebar */}
-        <aside className="glass-surface hidden w-56 flex-shrink-0 flex-col border-r border-zinc-800/40 p-3 md:flex">
+    <main className="app-dark-bg app-grid min-h-dvh text-zinc-50 md:min-h-screen">
+      <div className="flex min-h-dvh w-full md:min-h-screen">
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
+            onClick={() => setSidebarOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+        <aside
+          className={`glass-surface fixed inset-y-0 left-0 z-50 flex w-64 max-w-[85vw] flex-col border-r border-zinc-800/40 p-3 transition-transform duration-300 ease-out md:relative md:inset-auto md:z-auto md:w-56 md:max-w-none md:flex-shrink-0 md:translate-x-0 ${
+            sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
+        >
           <h1 className="mb-4 text-sm font-semibold tracking-tight text-zinc-100">
             Doc Intelligence
           </h1>
@@ -397,14 +408,14 @@ export default function TeamPage() {
           </div>
 
           <nav className="mt-3 space-y-0.5 border-t border-zinc-800/50 pt-3">
-            <Link href="/" className="block rounded px-2 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200">
+            <Link href="/" className="block rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200" onClick={() => setSidebarOpen(false)}>
               Dashboard
             </Link>
-            <Link href="/team" className="block rounded px-2 py-1.5 text-xs text-zinc-200 bg-zinc-800/50">
+            <Link href="/team" className="block rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 bg-zinc-800/50" onClick={() => setSidebarOpen(false)}>
               Team
             </Link>
             {canCreateWorkspace && (
-              <a href="/admin" className="block rounded px-2 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200">
+              <a href="/admin" className="block rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200" onClick={() => setSidebarOpen(false)}>
                 Admin
               </a>
             )}
@@ -423,7 +434,23 @@ export default function TeamPage() {
         </aside>
 
         {/* Main content */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          {/* Mobile header */}
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-800/40 p-3 md:hidden">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200"
+              aria-label="Open menu"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <h1 className="truncate text-base font-semibold text-zinc-100">Team</h1>
+            <div className="w-9" />
+          </div>
+          <div className="flex-1 p-3 sm:p-4 md:p-6">
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
@@ -668,6 +695,7 @@ export default function TeamPage() {
             </motion.section>
           )}
 
+          </div>
           <ConfirmDeleteModal
             open={!!deleteWorkspaceId}
             onClose={() => setDeleteWorkspaceId(null)}

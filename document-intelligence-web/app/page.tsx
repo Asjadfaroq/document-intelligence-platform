@@ -116,6 +116,7 @@ export default function Home() {
   const [deleteDocumentId, setDeleteDocumentId] = useState<string | null>(null);
   const [streamingChatId, setStreamingChatId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const questionTextAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const isLoggedIn = Boolean(role);
@@ -538,14 +539,21 @@ export default function Home() {
   }
 
   return (
-    <main className="app-dark-bg app-grid h-screen text-zinc-50" dir={dir}>
-      <div className="flex h-screen w-full overflow-hidden">
-        {/* Sidebar */}
-        <motion.aside
-          initial={{ opacity: 0, x: -8 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-          className="glass-surface hidden w-56 flex-shrink-0 flex-col border-r border-zinc-800/40 p-3 md:flex"
+    <main className="app-dark-bg app-grid min-h-dvh text-zinc-50 md:min-h-screen" dir={dir}>
+      <div className="flex min-h-dvh w-full overflow-hidden md:min-h-screen">
+        {/* Mobile: backdrop when sidebar open */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
+            onClick={() => setSidebarOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+        {/* Sidebar: drawer on mobile, inline on desktop */}
+        <aside
+          className={`glass-surface fixed inset-y-0 left-0 z-50 flex w-64 max-w-[85vw] flex-col border-r border-zinc-800/40 p-3 transition-transform duration-300 ease-out md:relative md:inset-auto md:z-auto md:w-56 md:max-w-none md:flex-shrink-0 md:translate-x-0 ${
+            sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
         >
           <h1 className="mb-4 text-sm font-semibold tracking-tight text-zinc-100">
             {locale === "ar" ? "الذكاء المستندي" : "Doc Intelligence"}
@@ -591,14 +599,14 @@ export default function Home() {
           </div>
 
           <nav className="mt-3 space-y-0.5 border-t border-zinc-800/50 pt-3">
-            <Link href="/" className="nav-link block rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200">
+            <Link href="/" className="nav-link block rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200" onClick={() => setSidebarOpen(false)}>
               {locale === "ar" ? "لوحة التحكم" : "Dashboard"}
             </Link>
-            <Link href="/team" className="nav-link block rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200">
+            <Link href="/team" className="nav-link block rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200" onClick={() => setSidebarOpen(false)}>
               {locale === "ar" ? "الفريق" : "Team"}
             </Link>
             {canCreateWorkspace && (
-              <a href="/admin" className="nav-link block rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200">
+              <a href="/admin" className="nav-link block rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200" onClick={() => setSidebarOpen(false)}>
                 {locale === "ar" ? "التحليلات" : "Admin"}
               </a>
             )}
@@ -636,19 +644,32 @@ export default function Home() {
               {locale === "ar" ? "تسجيل الخروج" : "Logout"}
             </button>
           </div>
-        </motion.aside>
+        </aside>
 
         {/* Main content */}
         <motion.div
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35, delay: 0.05, ease: [0.16, 1, 0.3, 1] }}
-          className="flex min-h-0 flex-1 flex-col p-3 md:p-4"
+          className="flex min-h-0 flex-1 flex-col p-2 sm:p-3 md:p-4"
         >
-          <header className="mb-3 flex items-center justify-between">
-            <h2 className="text-base font-semibold tracking-tight text-zinc-100">
-              {locale === "ar" ? "المحادثة" : "Chat"}
-            </h2>
+          {/* Mobile header with hamburger */}
+          <header className="mb-2 flex items-center justify-between gap-2 sm:mb-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(true)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200 md:hidden"
+                aria-label="Open menu"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+              <h2 className="truncate text-base font-semibold tracking-tight text-zinc-100 sm:text-lg">
+                {locale === "ar" ? "المحادثة" : "Chat"}
+              </h2>
+            </div>
             <button
               type="button"
               onClick={toggleLocale}
@@ -677,7 +698,7 @@ export default function Home() {
             confirmValue="DELETE"
           />
 
-          <section className="glass-surface flex min-h-0 flex-1 flex-col rounded-2xl border border-zinc-700/30 shadow-xl shadow-black/20">
+          <section className="glass-surface flex min-h-0 flex-1 flex-col rounded-xl border border-zinc-700/30 shadow-xl shadow-black/20 sm:rounded-2xl">
             {/* Compact upload bar */}
             <form
               onSubmit={handleUpload}
@@ -689,7 +710,7 @@ export default function Home() {
                 const file = e.dataTransfer.files?.[0];
                 if (file?.type === "application/pdf") setUploadFile(file);
               }}
-              className={`flex items-center gap-2 border-b border-zinc-700/30 px-3 py-2.5 transition-colors ${
+              className={`flex flex-wrap items-center gap-2 border-b border-zinc-700/30 px-2 py-2 transition-colors sm:flex-nowrap sm:gap-2 sm:px-3 sm:py-2.5 ${
                 dragActive ? "bg-indigo-500/5" : ""
               }`}
             >
@@ -721,7 +742,7 @@ export default function Home() {
                 </button>
               )}
               <input
-                className="w-24 rounded border border-zinc-700/50 bg-transparent px-2 py-1 text-[11px] text-zinc-400 placeholder:text-zinc-600 focus:outline-none"
+                className="hidden w-24 rounded border border-zinc-700/50 bg-transparent px-2 py-1 text-[11px] text-zinc-400 placeholder:text-zinc-600 focus:outline-none sm:block"
                 placeholder="en/ar"
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
@@ -822,7 +843,7 @@ export default function Home() {
             )}
 
             {/* Chat area */}
-            <div className="flex min-h-0 flex-1 flex-col p-3">
+            <div className="flex min-h-0 flex-1 flex-col p-2 sm:p-3">
               {/* No workspaces: prompt to create one */}
               {workspaces.length === 0 && (
                 <div className="flex flex-1 flex-col items-center justify-center px-4">
@@ -856,13 +877,13 @@ export default function Home() {
                       : "Ask questions about your documents"}
                   </p>
                   <form
-                    className="w-full max-w-2xl"
+                    className="w-full max-w-2xl px-2 sm:px-0"
                     onSubmit={(e) => {
                       e.preventDefault();
                       void ask(question);
                     }}
                   >
-                    <div className="input-glow flex items-center gap-3 rounded-2xl border border-zinc-600/40 bg-zinc-900/60 px-4 py-3.5 shadow-lg transition-all duration-200 focus-within:border-indigo-500/50 focus-within:bg-zinc-900/80">
+                    <div className="input-glow flex flex-col items-stretch gap-2 rounded-xl border border-zinc-600/40 bg-zinc-900/60 px-3 py-2.5 shadow-lg transition-all duration-200 focus-within:border-indigo-500/50 focus-within:bg-zinc-900/80 sm:flex-row sm:items-center sm:gap-3 sm:rounded-2xl sm:px-4 sm:py-3.5">
                       <button
                         type="button"
                         className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-800/50 hover:text-zinc-300"
@@ -879,10 +900,10 @@ export default function Home() {
                         onChange={(e) => setQuestion(e.target.value)}
                         disabled={busyAsk}
                       />
-                      <div className="relative flex flex-shrink-0 items-center gap-1">
+                      <div className="relative flex flex-shrink-0 flex-wrap items-center justify-end gap-1 sm:flex-nowrap">
                         <button
                           type="button"
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-300"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-800/50 hover:text-zinc-300"
                           title={locale === "ar" ? "إعدادات" : "Settings"}
                           onClick={(e) => { e.stopPropagation(); setShowSettings((s) => !s); }}
                         >
@@ -955,7 +976,7 @@ export default function Home() {
               )}
 
               {/* Messages list (when chat has content) */}
-              <div className={`flex-1 space-y-3 overflow-y-auto pr-1 ${chat.length === 0 ? "hidden" : "mb-2"}`}>
+              <div className={`flex-1 space-y-3 overflow-y-auto px-1 pr-1 sm:px-0 ${chat.length === 0 ? "hidden" : "mb-2"}`}>
                 <AnimatePresence initial={false}>
                   {chat.map((item) => {
                     const answerDir = resolveAnswerDir(
@@ -1034,7 +1055,7 @@ export default function Home() {
               {/* Sticky input (only when chat has messages) */}
               {chat.length > 0 && (
               <form
-                className="mt-auto flex items-end gap-2 border-t border-zinc-700/30 bg-zinc-900/20 pt-3"
+                className="mt-auto flex flex-col gap-2 border-t border-zinc-700/30 bg-zinc-900/20 px-2 pt-3 sm:flex-row sm:items-end sm:px-0"
                 onSubmit={(e) => {
                   e.preventDefault();
                   void ask(question);
@@ -1050,7 +1071,7 @@ export default function Home() {
                 </button>
                 <textarea
                   ref={questionTextAreaRef}
-                  className="min-h-[36px] max-h-24 flex-1 resize-none rounded-xl border border-zinc-600/40 bg-zinc-800/50 px-3 py-2 text-[13px] text-zinc-100 placeholder:text-zinc-500 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/30 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                  className="min-h-[44px] max-h-24 flex-1 resize-none rounded-xl border border-zinc-600/40 bg-zinc-800/50 px-3 py-2 text-[13px] text-zinc-100 placeholder:text-zinc-500 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/30 transition-colors disabled:cursor-not-allowed disabled:opacity-60 sm:min-h-[36px]"
                   placeholder={locale === "ar" ? "اسأل عن مستنداتك..." : "Ask about your documents..."}
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
