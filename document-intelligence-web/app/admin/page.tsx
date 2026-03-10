@@ -22,6 +22,7 @@ import { useToast } from "../components/ToastProvider";
 import { AppFooter } from "../components/AppFooter";
 import { MobileBottomNav } from "../components/MobileBottomNav";
 import { useLanguage } from "../components/LanguageProvider";
+import { useLockBodyScroll } from "../hooks/useLockBodyScroll";
 
 type AuthMe = { tenantId: string; email: string; role: string };
 
@@ -100,12 +101,7 @@ export default function AdminPage() {
   const [role, setRole] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  useEffect(() => {
-    if (!sidebarOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = prev; };
-  }, [sidebarOpen]);
+  useLockBodyScroll(sidebarOpen);
 
   const load = useCallback(async () => {
     const apiBase = getApiBase();

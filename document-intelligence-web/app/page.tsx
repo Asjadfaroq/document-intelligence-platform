@@ -15,6 +15,7 @@ import ConfirmDeleteModal from "./components/ConfirmDeleteModal";
 import { AppFooter } from "./components/AppFooter";
 import { MobileBottomNav } from "./components/MobileBottomNav";
 import { useLanguage } from "./components/LanguageProvider";
+import { useLockBodyScroll } from "./hooks/useLockBodyScroll";
 import { useToast } from "./components/ToastProvider";
 import { ChatMessageBubble } from "./components/ChatMessageBubble";
 import { DocumentStatusBadge, mapStatusCode } from "./components/DocumentStatusBadge";
@@ -122,12 +123,7 @@ export default function Home() {
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const questionTextAreaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  useEffect(() => {
-    if (!sidebarOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = prev; };
-  }, [sidebarOpen]);
+  useLockBodyScroll(sidebarOpen);
   const isLoggedIn = Boolean(role);
 
   const canCallApi = useMemo(

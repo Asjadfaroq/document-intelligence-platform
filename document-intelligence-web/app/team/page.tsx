@@ -10,6 +10,7 @@ import ConfirmDeleteModal from "../components/ConfirmDeleteModal";
 import { AppFooter } from "../components/AppFooter";
 import { MobileBottomNav } from "../components/MobileBottomNav";
 import { useLanguage } from "../components/LanguageProvider";
+import { useLockBodyScroll } from "../hooks/useLockBodyScroll";
 
 type TenantMember = {
   id: string;
@@ -75,13 +76,7 @@ export default function TeamPage() {
   const [showDeleteTenantModal, setShowDeleteTenantModal] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  useEffect(() => {
-    if (!sidebarOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = prev; };
-  }, [sidebarOpen]);
-
+  useLockBodyScroll(sidebarOpen);
   const isLoggedIn = Boolean(role);
   const isOwner = role === "Owner";
 
