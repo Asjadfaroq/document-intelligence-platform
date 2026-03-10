@@ -552,8 +552,8 @@ public class HuggingFaceEmbeddingService : IEmbeddingService
                 $"HuggingFace embedding error ({response.StatusCode}): {json}");
         }
 
-        using var doc = System.Text.Json.JsonDocument.Parse(json);
-        var vector = doc.RootElement[0]
+        using var jsonDoc = System.Text.Json.JsonDocument.Parse(json);
+        var vector = jsonDoc.RootElement[0]
             .EnumerateArray()
             .Select(e => e.GetSingle())
             .ToArray();
@@ -841,14 +841,14 @@ public sealed class WorkspaceDeleteService : IWorkspaceDeleteService
             try
             {
                 var documents = await _db.Documents.Where(d => d.WorkspaceId == workspaceId).ToListAsync(ct);
-                foreach (var doc in documents)
+                foreach (var document in documents)
                 {
                     try
                     {
-                        await _storage.DeleteObjectAsync(doc.StoragePath, ct);
-                        _logger.LogInformation("Deleted storage file for document {DocumentId}", doc.Id);
+                        await _storage.DeleteObjectAsync(document.StoragePath, ct);
+                        _logger.LogInformation("Deleted storage file for document {DocumentId}", document.Id);
                     }
-                    catch (Exception ex) { _logger.LogWarning(ex, "Failed to delete storage file {StoragePath}", doc.StoragePath); }
+                    catch (Exception ex) { _logger.LogWarning(ex, "Failed to delete storage file {StoragePath}", document.StoragePath); }
                 }
                 var questions = await _db.Questions.Where(q => q.WorkspaceId == workspaceId).ToListAsync(ct);
                 _db.Answers.RemoveRange(_db.Answers.Where(a => questions.Select(q => q.Id).Contains(a.QuestionId)));
@@ -939,10 +939,10 @@ public sealed class TenantDeleteService : ITenantDeleteService
                 var documents = await _db.Documents.Where(d => d.TenantId == tenantId).ToListAsync(ct);
                 var workspaceIds = (await _db.Workspaces.Where(w => w.TenantId == tenantId).Select(w => w.Id).ToListAsync(ct)).ToHashSet();
 
-                foreach (var doc in documents)
+                foreach (var document in documents)
                 {
-                    try { await _storage.DeleteObjectAsync(doc.StoragePath, ct); }
-                    catch (Exception ex) { _logger.LogWarning(ex, "Failed to delete storage file {StoragePath}", doc.StoragePath); }
+                    try { await _storage.DeleteObjectAsync(document.StoragePath, ct); }
+                    catch (Exception ex) { _logger.LogWarning(ex, "Failed to delete storage file {StoragePath}", document.StoragePath); }
                 }
                 var questions = await _db.Questions.Where(q => workspaceIds.Contains(q.WorkspaceId)).ToListAsync(ct);
                 _db.Answers.RemoveRange(_db.Answers.Where(a => questions.Select(q => q.Id).Contains(a.QuestionId)));
@@ -1301,8 +1301,7 @@ public class DocumentIngestionWorker : BackgroundService
         if (text.Length <= chunkSize)
             return [text];
 
-        var result = new List<string>();
-        var step = Math.Max(1, chunkSize - overlap);
+        var chunks = new List<string>();
         var start = 0;
 
         while (start < text.Length)
@@ -1318,7 +1317,7 @@ public class DocumentIngestionWorker : BackgroundService
 
             var chunk = text[start..end].Trim();
             if (!string.IsNullOrWhiteSpace(chunk))
-                result.Add(chunk);
+                chunks.Add(chunk);
 
             if (end >= text.Length)
                 break;
@@ -1326,6 +1325,6 @@ public class DocumentIngestionWorker : BackgroundService
             start = Math.Max(0, end - overlap);
         }
 
-        return result;
+        return chunks;
     }
 }

@@ -36,8 +36,8 @@ internal static class OpenAiChatResponse
 {
     public static string ParseContent(string json)
     {
-        using var doc = JsonDocument.Parse(json);
-        return doc.RootElement
+        using var jsonDoc = JsonDocument.Parse(json);
+        return jsonDoc.RootElement
             .GetProperty("choices")[0]
             .GetProperty("message")
             .GetProperty("content")
