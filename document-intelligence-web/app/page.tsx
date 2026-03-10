@@ -13,6 +13,7 @@ import {
 import CreateWorkspaceModal from "./components/CreateWorkspaceModal";
 import ConfirmDeleteModal from "./components/ConfirmDeleteModal";
 import { AppFooter } from "./components/AppFooter";
+import { MobileBottomNav } from "./components/MobileBottomNav";
 import { useLanguage } from "./components/LanguageProvider";
 import { useToast } from "./components/ToastProvider";
 import { ChatMessageBubble } from "./components/ChatMessageBubble";
@@ -656,25 +657,13 @@ export default function Home() {
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35, delay: 0.05, ease: [0.16, 1, 0.3, 1] }}
-          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden p-2 sm:p-3 md:p-4"
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden p-2 sm:p-3 md:p-4 mobile-nav-spacer"
         >
-          {/* Mobile header with hamburger */}
+          {/* Header: mobile uses bottom nav Menu; desktop keeps sidebar visible */}
           <header className="mb-2 flex items-center justify-between gap-2 sm:mb-3">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setSidebarOpen(true)}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200 md:hidden"
-                aria-label="Open menu"
-              >
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              </button>
-              <h2 className="truncate text-base font-semibold tracking-tight text-zinc-100 sm:text-lg">
-                {locale === "ar" ? "المحادثة" : "Chat"}
-              </h2>
-            </div>
+            <h2 className="truncate text-base font-semibold tracking-tight text-zinc-100 sm:text-lg">
+              {locale === "ar" ? "المحادثة" : "Chat"}
+            </h2>
             <button
               type="button"
               onClick={toggleLocale}
@@ -1157,6 +1146,13 @@ export default function Home() {
             </div>
           </section>
         </motion.div>
+
+        <MobileBottomNav
+          activeTab="chat"
+          onMenuPress={() => setSidebarOpen(true)}
+          showAdmin={canCreateWorkspace}
+          locale={locale === "ar" ? "ar" : "en"}
+        />
       </div>
     </main>
   );

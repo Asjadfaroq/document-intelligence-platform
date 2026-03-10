@@ -8,6 +8,8 @@ import { getApiBase, readResponseBody, formatError, AuthResponse } from "../lib/
 import { useToast } from "../components/ToastProvider";
 import ConfirmDeleteModal from "../components/ConfirmDeleteModal";
 import { AppFooter } from "../components/AppFooter";
+import { MobileBottomNav } from "../components/MobileBottomNav";
+import { useLanguage } from "../components/LanguageProvider";
 
 type TenantMember = {
   id: string;
@@ -54,6 +56,7 @@ function RoleBadge({ role }: { role: string }) {
 export default function TeamPage() {
   const router = useRouter();
   const { showToast } = useToast();
+  const { locale } = useLanguage();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("");
   const [tenants, setTenants] = useState<TenantMembership[]>([]);
@@ -370,7 +373,7 @@ export default function TeamPage() {
           className={`drawer-panel flex flex-col overflow-y-auto p-3 md:flex-shrink-0 ${sidebarOpen ? "is-open" : ""}`}
         >
           <h1 className="mb-4 text-sm font-semibold tracking-tight text-zinc-100">
-            Doc Intelligence
+            {locale === "ar" ? "الذكاء المستندي" : "Doc Intelligence"}
           </h1>
 
           <div className="space-y-2">
@@ -412,15 +415,15 @@ export default function TeamPage() {
           </div>
 
           <nav className="mt-3 space-y-0.5 border-t border-zinc-800/50 pt-3">
-            <Link href="/" className="block rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200" onClick={() => setSidebarOpen(false)}>
-              Dashboard
+            <Link href="/" className="nav-link block rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200" onClick={() => setSidebarOpen(false)}>
+              {locale === "ar" ? "لوحة التحكم" : "Dashboard"}
             </Link>
-            <Link href="/team" className="block rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 bg-zinc-800/50" onClick={() => setSidebarOpen(false)}>
-              Team
+            <Link href="/team" className="nav-link block rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 bg-zinc-800/50" onClick={() => setSidebarOpen(false)}>
+              {locale === "ar" ? "الفريق" : "Team"}
             </Link>
             {canCreateWorkspace && (
-              <a href="/admin" className="block rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200" onClick={() => setSidebarOpen(false)}>
-                Admin
+              <a href="/admin" className="nav-link block rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200" onClick={() => setSidebarOpen(false)}>
+                {locale === "ar" ? "التحليلات" : "Admin"}
               </a>
             )}
           </nav>
@@ -440,22 +443,13 @@ export default function TeamPage() {
 
         {/* Main content */}
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          {/* Mobile header */}
-          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-800/40 p-3 md:hidden">
-            <button
-              type="button"
-              onClick={() => setSidebarOpen(true)}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200"
-              aria-label="Open menu"
-            >
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-            <h1 className="truncate text-base font-semibold text-zinc-100">Team</h1>
-            <div className="w-9" />
+          {/* Mobile header — Menu via bottom nav, no hamburger */}
+          <div className="flex shrink-0 items-center border-b border-zinc-800/40 px-3 py-3 md:hidden">
+            <h1 className="truncate text-base font-semibold text-zinc-100">
+              {locale === "ar" ? "الفريق" : "Team"}
+            </h1>
           </div>
-          <div className="flex-1 p-3 sm:p-4 md:p-6">
+          <div className="flex-1 p-3 sm:p-4 md:p-6 mobile-nav-spacer">
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
@@ -720,6 +714,12 @@ export default function TeamPage() {
             confirmValue="DELETE"
           />
         </div>
+        <MobileBottomNav
+          activeTab="team"
+          onMenuPress={() => setSidebarOpen(true)}
+          showAdmin={canCreateWorkspace}
+          locale={locale === "ar" ? "ar" : "en"}
+        />
       </div>
     </main>
   );

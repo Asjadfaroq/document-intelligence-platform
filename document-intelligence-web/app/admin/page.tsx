@@ -20,6 +20,8 @@ import {
 import { getApiBase, readResponseBody, formatError } from "../lib/api";
 import { useToast } from "../components/ToastProvider";
 import { AppFooter } from "../components/AppFooter";
+import { MobileBottomNav } from "../components/MobileBottomNav";
+import { useLanguage } from "../components/LanguageProvider";
 
 type AuthMe = { tenantId: string; email: string; role: string };
 
@@ -90,6 +92,7 @@ function EmptyChartPlaceholder({ label }: { label: string }) {
 
 export default function AdminPage() {
   const { showToast } = useToast();
+  const { locale } = useLanguage();
   const [overview, setOverview] = useState<TenantOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -266,11 +269,19 @@ export default function AdminPage() {
         <aside
           className={`drawer-panel flex flex-col overflow-y-auto p-3 md:flex-shrink-0 md:h-full ${sidebarOpen ? "is-open" : ""}`}
         >
-          <h1 className="mb-4 text-sm font-semibold tracking-tight text-zinc-100">Doc Intelligence</h1>
+          <h1 className="mb-4 text-sm font-semibold tracking-tight text-zinc-100">
+            {locale === "ar" ? "الذكاء المستندي" : "Doc Intelligence"}
+          </h1>
           <nav className="space-y-0.5 border-t border-zinc-800/50 pt-3">
-            <Link href="/" className="block rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200" onClick={() => setSidebarOpen(false)}>Dashboard</Link>
-            <Link href="/team" className="block rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200" onClick={() => setSidebarOpen(false)}>Team</Link>
-            <Link href="/admin" className="block rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 bg-zinc-800/50" onClick={() => setSidebarOpen(false)}>Admin</Link>
+            <Link href="/" className="nav-link block rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200" onClick={() => setSidebarOpen(false)}>
+              {locale === "ar" ? "لوحة التحكم" : "Dashboard"}
+            </Link>
+            <Link href="/team" className="nav-link block rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200" onClick={() => setSidebarOpen(false)}>
+              {locale === "ar" ? "الفريق" : "Team"}
+            </Link>
+            <Link href="/admin" className="nav-link block rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 bg-zinc-800/50" onClick={() => setSidebarOpen(false)}>
+              {locale === "ar" ? "التحليلات" : "Admin"}
+            </Link>
           </nav>
           <div className="mt-auto border-t border-zinc-800/50 pt-3">
             <p className="mb-1 px-2 text-[10px] text-zinc-500">{email}</p>
@@ -281,28 +292,20 @@ export default function AdminPage() {
 
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <div className="mb-2 flex flex-shrink-0 flex-wrap items-center justify-between gap-2 border-b border-zinc-800/40 p-3 md:border-b-0 md:p-3 md:pb-2">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setSidebarOpen(true)}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200 md:hidden"
-                aria-label="Open menu"
-              >
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              </button>
-              <div>
-                <h1 className="text-base font-semibold tracking-tight text-zinc-100 sm:text-lg">Analytics</h1>
-                <p className="text-[11px] text-zinc-500">Tenant overview and usage metrics</p>
-              </div>
+            <div>
+              <h1 className="text-base font-semibold tracking-tight text-zinc-100 sm:text-lg">
+                {locale === "ar" ? "التحليلات" : "Analytics"}
+              </h1>
+              <p className="text-[11px] text-zinc-500">
+                {locale === "ar" ? "نظرة عامة على المستأجر وبيانات الاستخدام" : "Tenant overview and usage metrics"}
+              </p>
             </div>
             <Link href="/" className="rounded-xl border border-zinc-700/50 bg-zinc-900/50 px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:border-zinc-600 hover:bg-zinc-800/50 sm:px-4">
               ← Back to Chat
             </Link>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden px-3 pb-8 md:gap-2 md:overflow-hidden md:pb-4">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden px-3 pb-8 md:gap-2 md:overflow-hidden md:pb-4 mobile-nav-spacer">
           <div className="grid flex-shrink-0 gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {kpis.map((kpi) => (
               <div key={kpi.label} className="glass-surface rounded-xl border border-zinc-800/40 p-3 shadow-lg">
@@ -430,6 +433,12 @@ export default function AdminPage() {
           </section>
           </div>
         </div>
+        <MobileBottomNav
+          activeTab="admin"
+          onMenuPress={() => setSidebarOpen(true)}
+          showAdmin={true}
+          locale={locale === "ar" ? "ar" : "en"}
+        />
       </div>
     </main>
   );
