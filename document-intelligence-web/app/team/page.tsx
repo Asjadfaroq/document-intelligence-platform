@@ -72,7 +72,8 @@ export default function TeamPage() {
   const [joinCode, setJoinCode] = useState("");
   const [joinPassword, setJoinPassword] = useState("");
   const [status, setStatus] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busyInvite, setBusyInvite] = useState(false);
+  const [busyJoin, setBusyJoin] = useState(false);
   const [busyLogout, setBusyLogout] = useState(false);
   const [deleteWorkspaceId, setDeleteWorkspaceId] = useState<string | null>(null);
   const [showDeleteTenantModal, setShowDeleteTenantModal] = useState(false);
@@ -246,7 +247,8 @@ export default function TeamPage() {
 
   async function handleCreateInvite(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setBusy(true);
+    if (busyInvite) return;
+    setBusyInvite(true);
     setLatestCode(null);
     try {
       const res = await fetch(`${getApiBase()}/tenant/invitations`, {
@@ -269,7 +271,7 @@ export default function TeamPage() {
       const msg = err instanceof Error ? err.message : "Failed to create invite.";
       showToast(msg, "error");
     } finally {
-      setBusy(false);
+      setBusyInvite(false);
     }
   }
 
@@ -279,7 +281,8 @@ export default function TeamPage() {
       showToast("Invite code is required.", "error");
       return;
     }
-    setBusy(true);
+    if (busyJoin) return;
+    setBusyJoin(true);
     try {
       const res = await fetch(`${getApiBase()}/auth/accept-invite`, {
         method: "POST",
@@ -303,7 +306,7 @@ export default function TeamPage() {
       const msg = err instanceof Error ? err.message : "Failed to join tenant.";
       showToast(msg, "error");
     } finally {
-      setBusy(false);
+      setBusyJoin(false);
     }
   }
 
@@ -559,10 +562,10 @@ export default function TeamPage() {
                     </select>
                     <button
                       type="submit"
-                      disabled={busy}
+                      disabled={busyInvite}
                       className="rounded-xl bg-indigo-500 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-indigo-500/20 transition-all hover:bg-indigo-400 disabled:opacity-50"
                     >
-                      {busy ? (
+                      {busyInvite ? (
                         <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-transparent" />
                       ) : (
                         "Invite"
@@ -609,10 +612,13 @@ export default function TeamPage() {
               </h2>
               <form className="flex flex-col gap-3" onSubmit={handleJoinTenant}>
                 <input
+                  type="text"
+                  name="invite-code"
                   placeholder="Invite code"
                   value={joinCode}
                   onChange={(e) => setJoinCode(e.target.value)}
                   required
+                  autoComplete="off"
                   className="w-full rounded-xl border border-zinc-700/50 bg-zinc-900/50 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
                 />
                 <PasswordInput
@@ -624,10 +630,10 @@ export default function TeamPage() {
                 />
                 <button
                   type="submit"
-                  disabled={busy}
+                  disabled={busyJoin}
                   className="w-full rounded-xl bg-emerald-500/90 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-emerald-400 disabled:opacity-50"
                 >
-                  {busy ? (
+                  {busyJoin ? (
                     <span className="flex items-center justify-center gap-2">
                       <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-transparent" />
                       Joining...
