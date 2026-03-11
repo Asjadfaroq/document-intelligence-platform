@@ -298,10 +298,15 @@ export default function TeamPage() {
       if (!body || typeof body !== "object" || !("role" in body)) {
         throw new Error("Unexpected response from accept-invite endpoint.");
       }
+      const auth = body as AuthResponse;
+      // Immediately update auth + tenant state so the UI reflects the newly joined tenant
+      setUserFromAuth(auth);
+      await loadTenants();
+      setActiveTenantId(auth.tenantId);
+      await loadMembers();
       showToast("Joined tenant successfully.", "success");
       setJoinCode("");
       setJoinPassword("");
-      await loadMembers();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to join tenant.";
       showToast(msg, "error");
