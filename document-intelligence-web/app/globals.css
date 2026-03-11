@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #050508;
+  --foreground: #ededed;
   --accent-glow: 99 102 241;
   --surface-elevated: rgba(24, 24, 27, 0.6);
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
@@ -14,13 +14,6 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #050508;
-    --foreground: #ededed;
-  }
 }
 
 html {
