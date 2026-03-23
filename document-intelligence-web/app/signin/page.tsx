@@ -103,6 +103,29 @@ export default function SignInPage() {
           />
         </div>
 
+        <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-medium uppercase tracking-wider text-zinc-300">
+              Demo Credentials
+            </p>
+            <span className="text-[11px] text-zinc-500">For local testing</span>
+          </div>
+          <div className="mt-2 space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm text-zinc-400">Email</span>
+              <code className="rounded-lg border border-zinc-700/60 bg-zinc-950/30 px-2.5 py-1 font-mono text-xs text-zinc-100">
+                owner@acme.com
+              </code>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm text-zinc-400">Password</span>
+              <code className="rounded-lg border border-zinc-700/60 bg-zinc-950/30 px-2.5 py-1 font-mono text-xs text-zinc-100">
+                Password123!
+              </code>
+            </div>
+          </div>
+        </div>
+
         {status && (
           <p className="text-sm text-zinc-400" role="status">
             {status}
